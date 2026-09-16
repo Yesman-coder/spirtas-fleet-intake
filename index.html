@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet Intake — Spirtas Worldwide</title>
+<meta name="description" content="Register your company and submit your machinery list to Spirtas Worldwide.">
+<link rel="icon" href="assets/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <img src="assets/logo.png" alt="Spirtas Worldwide">
+      <div class="brand-copy">
+        <span class="brand-name">SPIRTAS WORLDWIDE</span>
+        <span class="brand-tag" data-i18n="brandTag">Demolition · Remediation · Emergency Response</span>
+      </div>
+    </div>
+    <div class="lang-toggle" role="group" aria-label="Language / Idioma">
+      <button type="button" id="langEn" aria-pressed="true">EN</button>
+      <button type="button" id="langEs" aria-pressed="false">ES</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero">
+    <p class="eyebrow" data-i18n="eyebrow">Equipment Network Registration</p>
+    <h1 data-i18n="h1">Register your company &amp; submit your machinery list</h1>
+    <p class="lede" data-i18n="lede">Tell us who you are, then add your equipment one by one or upload your existing list. Everything you submit goes straight into our fleet database for review.</p>
+  </section>
+
+  <div class="steps">
+    <span class="step" data-step="1"><span class="n">1</span><span data-i18n="step1">Company</span></span>
+    <span class="step" data-step="2"><span class="n">2</span><span data-i18n="step2">Equipment</span></span>
+    <span class="step" data-step="3"><span class="n">3</span><span data-i18n="step3">Submit</span></span>
+  </div>
+
+  <form id="intakeForm" novalidate>
+
+    <!-- ===================== Company section ===================== -->
+    <section class="card">
+      <h2><span class="badge">1</span><span data-i18n="companyTitle">Company Registration</span></h2>
+      <p class="hint" data-i18n="companyHint">Basic contact details so we know who to follow up with.</p>
+
+      <div class="field-grid">
+        <div class="field" id="field-companyName">
+          <label for="companyName" data-i18n="lblCompanyName">Company Name<span class="req">*</span></label>
+          <input type="text" id="companyName" name="companyName" autocomplete="organization" required>
+          <p class="field-error" data-i18n="errRequired">This field is required.</p>
+        </div>
+        <div class="field" id="field-contactPerson">
+          <label for="contactPerson" data-i18n="lblContactPerson">Contact Person<span class="req">*</span></label>
+          <input type="text" id="contactPerson" name="contactPerson" autocomplete="name" required>
+          <p class="field-error" data-i18n="errRequired">This field is required.</p>
+        </div>
+        <div class="field" id="field-email">
+          <label for="email" data-i18n="lblEmail">Email<span class="req">*</span></label>
+          <input type="email" id="email" name="email" autocomplete="email" required>
+          <p class="field-error" data-i18n="errEmail">Enter a valid email address.</p>
+        </div>
+        <div class="field" id="field-phone">
+          <label for="phone" data-i18n="lblPhone">Phone<span class="req">*</span></label>
+          <input type="tel" id="phone" name="phone" autocomplete="tel" required>
+          <p class="field-error" data-i18n="errRequired">This field is required.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Equipment section ===================== -->
+    <section class="card">
+      <h2><span class="badge">2</span><span data-i18n="equipTitle">Machinery List</span></h2>
+      <p class="hint" data-i18n="equipHint">Add units manually, upload a spreadsheet, or both — you can review and edit everything below before submitting.</p>
+
+      <div class="mode-tabs" role="tablist">
+        <button type="button" class="mode-tab" role="tab" id="tabManual" aria-selected="true" data-i18n="tabManual">Add manually</button>
+        <button type="button" class="mode-tab" role="tab" id="tabUpload" aria-selected="false" data-i18n="tabUpload">Upload a file</button>
+      </div>
+
+      <div id="uploadPane" class="hidden">
+        <div class="upload-drop" id="dropZone">
+          <p><strong data-i18n="dropTitle">Drop your file here</strong></p>
+          <p data-i18n="dropSub">CSV or Excel (.csv, .xlsx, .xls) — column headers in English or Spanish are both fine.</p>
+          <button type="button" class="btn" id="browseBtn" data-i18n="browseBtn">Choose file</button>
+          <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" class="hidden">
+          <p class="upload-status" id="uploadStatus"></p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="eq-table">
+          <thead>
+            <tr>
+              <th data-i18n="colBrand">Brand</th>
+              <th data-i18n="colType">Type</th>
+              <th data-i18n="colModel">Model</th>
+              <th data-i18n="colId">ID</th>
+              <th data-i18n="colCapacity">Capacity</th>
+              <th data-i18n="colAge">Age</th>
+              <th data-i18n="colLocation">Location</th>
+              <th data-i18n="colPrice">Price/Day (24h)</th>
+              <th data-i18n="colContact">Contact (optional)</th>
+              <th class="col-action"></th>
+            </tr>
+          </thead>
+          <tbody id="eqBody"></tbody>
+        </table>
+      </div>
+
+      <div class="table-actions">
+        <button type="button" class="btn btn-primary" id="addRowBtn">+ <span data-i18n="addRow">Add row</span></button>
+        <span class="eq-count" id="eqCount"></span>
+      </div>
+    </section>
+
+    <!-- ===================== Submit ===================== -->
+    <div class="submit-row">
+      <p class="submit-note" data-i18n="submitNote">By submitting, you agree that Spirtas Worldwide may contact you about the equipment listed here.</p>
+      <button type="submit" class="btn btn-primary" id="submitBtn" data-i18n="submitBtn">Submit registration</button>
+    </div>
+    <p id="submitStatus"></p>
+  </form>
+
+  <section class="card success-panel" id="successPanel">
+    <div class="check">&#10003;</div>
+    <h2 data-i18n="successTitle">Thank you — your submission is on its way</h2>
+    <p data-i18n="successBody">We've sent your company details and machinery list to our team. If you don't hear from us within a few business days, please reach out directly.</p>
+    <button type="button" class="btn" id="downloadCopyBtn" data-i18n="downloadCopy">Download a copy of what you submitted</button>
+    <br><br>
+    <button type="button" class="btn btn-ghost" id="submitAnotherBtn" data-i18n="submitAnother">Submit another registration</button>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <p data-i18n="footer">© <span id="year"></span> Spirtas Worldwide — Complete Risk Transfer™</p>
+</footer>
+
+<!-- hidden form + iframe used to POST to Google Apps Script without a CORS round trip -->
+<iframe name="hiddenSubmitFrame" class="hidden" title="submission frame"></iframe>
+<form id="hiddenPostForm" method="POST" target="hiddenSubmitFrame" class="hidden">
+  <input type="hidden" name="payload" id="hiddenPayload">
+</form>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="assets/i18n.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
