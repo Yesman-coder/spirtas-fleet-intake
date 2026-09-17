@@ -62,6 +62,7 @@
       <div class="view-toggle" role="group" aria-label="Choose a view">
         <button type="button" class="view-btn" data-view="companies" aria-pressed="true">Companies</button>
         <button type="button" class="view-btn" data-view="machines" aria-pressed="false">Machines</button>
+        <button type="button" class="view-btn" data-view="fleet" aria-pressed="false">Our fleet</button>
       </div>
     </div>
     <div class="admin-actions">
@@ -95,7 +96,7 @@
       <span class="stat-foot" id="statCompaniesFoot">&nbsp;</span>
     </div>
     <div class="stat">
-      <span class="stat-label">Machines listed</span>
+      <span class="stat-label">Machines</span>
       <span class="stat-value" id="statMachines">—</span>
       <span class="stat-foot" id="statMachinesFoot">&nbsp;</span>
     </div>
@@ -231,6 +232,77 @@
 
   </div><!-- /machinesView -->
 
+  <!-- ===================== Our fleet ===================== -->
+  <div id="fleetView" class="hidden">
+
+    <p class="fleet-lede">
+      Machinery Spirtas already controls, held separately from the Venezuelan
+      subcontractor registrations. Quantities are what matter here: what exists,
+      what Venezuela needs, and whether there is enough.
+    </p>
+
+    <section class="stat-row">
+      <div class="stat">
+        <span class="stat-label">Available</span>
+        <span class="stat-value" id="fAvail">—</span>
+        <span class="stat-foot" id="fAvailFoot">&nbsp;</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Required for Venezuela</span>
+        <span class="stat-value" id="fReq">—</span>
+        <span class="stat-foot" id="fReqFoot">&nbsp;</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Short</span>
+        <span class="stat-value" id="fShort">—</span>
+        <span class="stat-foot" id="fShortFoot">&nbsp;</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Units on the register</span>
+        <span class="stat-value" id="fUnits">—</span>
+        <span class="stat-foot" id="fUnitsFoot">&nbsp;</span>
+      </div>
+    </section>
+
+    <section class="filter-row">
+      <div class="filter-search">
+        <input type="search" id="fSearch" placeholder="Search equipment, make, model, intended use…" aria-label="Search fleet">
+      </div>
+      <select id="fEquip" aria-label="Filter by equipment"><option value="">All equipment</option></select>
+      <label class="check-inline">
+        <input type="checkbox" id="fShortOnly"> Only where we are short
+      </label>
+    </section>
+
+    <p class="result-note" id="fNote"></p>
+
+    <section class="card table-card">
+      <div class="table-scroll">
+        <table class="admin-table fleet-table">
+          <thead>
+            <tr>
+              <th class="sortable" data-fsort="equipment">Equipment</th>
+              <th class="sortable" data-fsort="make">Make</th>
+              <th class="sortable" data-fsort="model">Model</th>
+              <th class="num sortable" data-fsort="capacity_t">Capacity</th>
+              <th class="num sortable" data-fsort="qty_available">Available</th>
+              <th class="num sortable" data-fsort="qty_required">Needed</th>
+              <th class="num">Gap</th>
+              <th>Intended use in Venezuela</th>
+            </tr>
+          </thead>
+          <tbody id="fBody"></tbody>
+        </table>
+      </div>
+      <div class="table-loading" id="fLoading"><span class="spinner" aria-hidden="true"></span> Loading fleet…</div>
+      <div class="table-empty hidden" id="fEmpty">
+        <p class="empty-title">No fleet loaded yet</p>
+        <p class="empty-body">Use Import file and choose "Our own fleet" to load the mobilization register.</p>
+      </div>
+    </section>
+
+  </div><!-- /fleetView -->
+
 </main>
 
 <footer class="site-foot">
@@ -249,9 +321,21 @@
 
     <div class="modal-body">
       <p class="modal-lede">
-        Load a machinery list in whatever shape it arrived in. If one column holds
-        company names, each company is filed as its own registration.
+        Load a machinery list in whatever shape it arrived in.
       </p>
+
+      <div class="import-mode" role="group" aria-label="What kind of list is this">
+        <label class="mode-opt">
+          <input type="radio" name="importMode" value="companies" checked>
+          <span><strong>Subcontractor companies</strong>
+          Each company becomes its own registration. Pick the column holding their names.</span>
+        </label>
+        <label class="mode-opt">
+          <input type="radio" name="importMode" value="fleet">
+          <span><strong>Our own fleet</strong>
+          Machinery we already control. Kept separate, counted by quantity available versus needed.</span>
+        </label>
+      </div>
 
       <div class="upload-drop" id="admDrop">
         <p><strong>Drop a file here</strong></p>

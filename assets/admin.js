@@ -278,14 +278,19 @@
       var s = res.data;
 
       $('statCompanies').textContent = fmtNum(s.companies);
-      $('statMachines').textContent = fmtNum(s.machines);
+      $('statMachines').textContent = fmtNum(s.units != null ? s.units : s.machines);
       $('statWeek').textContent = fmtNum(s.last7);
 
       $('statCompaniesFoot').textContent =
         s.awaiting > 0 ? fmtNum(s.awaiting) + ' awaiting review' : 'All reviewed';
 
       var avg = s.companies > 0 ? Math.round(s.machines / s.companies) : 0;
-      $('statMachinesFoot').textContent = avg > 0 ? avg + ' per company on average' : ' ';
+      // Two different counts: rows in the submitted lists, and actual machines
+      // once a row saying 'qty 5' is expanded. Saying both stops them looking
+      // like a contradiction.
+      $('statMachinesFoot').textContent = (s.units != null && s.units !== s.machines)
+        ? fmtNum(s.machines) + ' line items · ' + avg + ' per company'
+        : (avg > 0 ? avg + ' per company on average' : ' ');
 
       var delta = Number(s.last7) - Number(s.prev7);
       $('statWeekFoot').textContent = Number(s.prev7) === 0
@@ -908,16 +913,210 @@
       : '';
   }
 
+  /* =======================================================
+     Our fleet
+
+     Machines Spirtas already controls, kept apart from the
+     subcontractor registrations. The question here is not "who owns
+     this" but "have we got enough of it", so the table leads with
+     available, needed and the gap between them.
+     ======================================================= */
+
+  var fState = {
+    all: null, filtered: [],
+    search: '', equipment: '', shortOnly: false,
+    sortKey: 'qty_required', sortAsc: false
+  };
+
+  function loadFleet() {
+    if (fState.all) { renderFleet(); return; }
+    $('fLoading').classList.remove('hidden');
+
+    client.from('fleet_items')
+      .select('id,ref,owner,equipment,make,model,qty_available,qty_required,intended_use,notes,capacity_t,capacity_source,location')
+      .order('qty_required', { ascending: false })
+      .limit(2000)
+      .then(function (res) {
+        $('fLoading').classList.add('hidden');
+        if (res.error) {
+          // The tables only exist once migration 005 has been run.
+          $('fEmpty').classList.remove('hidden');
+          $('fEmpty').innerHTML =
+            '<p class="empty-title">Fleet tables not found</p>' +
+            '<p class="empty-body">Run supabase/005-own-fleet.sql in the SQL editor, then reload.</p>';
+          return;
+        }
+        fState.all = (res.data || []).map(function (r) {
+          r._hay = fold([r.equipment, r.make, r.model, r.intended_use, r.notes, r.ref].join(' '));
+          r._gap = Math.max((r.qty_required || 0) - (r.qty_available || 0), 0);
+          return r;
+        });
+        buildFleetFilters();
+        loadFleetStats();
+        renderFleet();
+      });
+  }
+
+  function loadFleetStats() {
+    client.rpc('own_fleet_stats').then(function (res) {
+      if (res.error || !res.data) return;
+      var s = res.data;
+      $('fAvail').textContent = fmtNum(s.available);
+      $('fReq').textContent = fmtNum(s.required);
+      $('fShort').textContent = fmtNum(s.shortfall);
+      $('fUnits').textContent = fmtNum(s.units);
+      $('fAvailFoot').textContent = fmtNum(s.types) + ' equipment types';
+      $('fReqFoot').textContent = s.available >= s.required
+        ? 'Covered by what we hold' : 'More than we currently hold';
+      $('fShortFoot').textContent = Number(s.shortfall) === 0
+        ? 'Nothing short' : 'Units still to source';
+      $('fUnitsFoot').textContent = 'Individually listed';
+    });
+  }
+
+  function buildFleetFilters() {
+    var m = {};
+    fState.all.forEach(function (r) {
+      if (r.equipment) m[r.equipment] = (m[r.equipment] || 0) + (r.qty_available || 0);
+    });
+    var vals = Object.keys(m).sort();
+    $('fEquip').innerHTML = '<option value="">All equipment</option>' +
+      vals.map(function (v) {
+        return '<option value="' + esc(v) + '">' + esc(v) + ' (' + fmtNum(m[v]) + ')</option>';
+      }).join('');
+  }
+
+  function renderFleet() {
+    if (!fState.all) return;
+    var term = fold(fState.search).trim();
+
+    fState.filtered = fState.all.filter(function (r) {
+      if (fState.equipment && r.equipment !== fState.equipment) return false;
+      if (fState.shortOnly && r._gap <= 0) return false;
+      if (term && r._hay.indexOf(term) === -1) return false;
+      return true;
+    });
+
+    var k = fState.sortKey, asc = fState.sortAsc ? 1 : -1;
+    fState.filtered.sort(function (a, b) {
+      var x = a[k], y = b[k];
+      if (k === 'qty_available' || k === 'qty_required' || k === 'capacity_t') {
+        var hx = x != null && x !== '', hy = y != null && y !== '';
+        if (!hx && !hy) return 0;
+        if (!hx) return 1;
+        if (!hy) return -1;
+        return (Number(x) - Number(y)) * asc;
+      }
+      x = fold(x); y = fold(y);
+      if (!x) return 1;
+      if (!y) return -1;
+      return x.localeCompare(y) * asc;
+    });
+
+    $('fBody').innerHTML = fState.filtered.map(function (r) {
+      var gap = r._gap;
+      // A capacity read off the model number is marked, so an estimate is
+      // never mistaken for something the supplier actually stated.
+      var cap = r.capacity_t != null
+        ? fmtNum(r.capacity_t) + ' t' +
+          (r.capacity_source === 'model' ? '<abbr class="est" title="Estimated from the model number">≈</abbr>' : '')
+        : '';
+      return '<tr>' +
+        '<td class="cell-company-sm">' + esc(r.equipment) + '</td>' +
+        '<td>' + esc(r.make || '') + '</td>' +
+        '<td>' + esc(r.model || '') + '</td>' +
+        '<td class="num">' + cap + '</td>' +
+        '<td class="num">' + fmtNum(r.qty_available) + '</td>' +
+        '<td class="num">' + fmtNum(r.qty_required) + '</td>' +
+        '<td class="num">' + (gap > 0
+          ? '<span class="gap-short">-' + fmtNum(gap) + '</span>'
+          : '<span class="gap-ok">ok</span>') + '</td>' +
+        '<td class="fleet-use">' + esc(r.intended_use || '') + '</td>' +
+        '</tr>';
+    }).join('');
+
+    var any = fState.filtered.length > 0;
+    $('fEmpty').classList.toggle('hidden', any);
+
+    var avail = fState.filtered.reduce(function (n, r) { return n + (r.qty_available || 0); }, 0);
+    var req = fState.filtered.reduce(function (n, r) { return n + (r.qty_required || 0); }, 0);
+    $('fNote').textContent = any
+      ? fmtNum(fState.filtered.length) + ' equipment types · ' + fmtNum(avail) +
+        ' available · ' + fmtNum(req) + ' needed'
+      : '';
+
+    var ths = document.querySelectorAll('.fleet-table th.sortable');
+    for (var i = 0; i < ths.length; i++) {
+      var key = ths[i].getAttribute('data-fsort');
+      if (key === fState.sortKey) ths[i].setAttribute('aria-sort', fState.sortAsc ? 'ascending' : 'descending');
+      else ths[i].removeAttribute('aria-sort');
+    }
+  }
+
+  function exportFleet(kind) {
+    if (!fState.filtered.length) { toast('Nothing to export.', true); return; }
+    var head = ['Ref', 'Equipment', 'Make', 'Model', 'Capacity (t)', 'Capacity source',
+                'Available', 'Needed', 'Gap', 'Intended use', 'Notes', 'Location'];
+    var rows = [head].concat(fState.filtered.map(function (r) {
+      return [r.ref || '', r.equipment, r.make || '', r.model || '',
+              r.capacity_t != null ? r.capacity_t : '', r.capacity_source || '',
+              r.qty_available, r.qty_required, r._gap > 0 ? -r._gap : 0,
+              r.intended_use || '', r.notes || '', r.location || ''];
+    }));
+    if (kind === 'combined' && typeof XLSX !== 'undefined') {
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Our fleet');
+      XLSX.writeFile(wb, 'our-fleet-' + stamp() + '.xlsx');
+    } else {
+      download(new Blob(['﻿' + toCsv(rows)], { type: 'text/csv;charset=utf-8;' }),
+        'our-fleet-' + stamp() + '.csv');
+    }
+    toast(fmtNum(rows.length - 1) + ' rows exported');
+  }
+
+  function wireFleetView() {
+    var t = null;
+    $('fSearch').addEventListener('input', function (e) {
+      var v = e.target.value;
+      clearTimeout(t);
+      t = setTimeout(function () { fState.search = v; renderFleet(); }, 150);
+    });
+    $('fEquip').addEventListener('change', function (e) {
+      fState.equipment = e.target.value; renderFleet();
+    });
+    $('fShortOnly').addEventListener('change', function (e) {
+      fState.shortOnly = e.target.checked; renderFleet();
+    });
+    document.querySelectorAll('.fleet-table th.sortable').forEach(function (th) {
+      th.addEventListener('click', function () {
+        var key = th.getAttribute('data-fsort');
+        var numeric = (key === 'qty_available' || key === 'qty_required' || key === 'capacity_t');
+        if (fState.sortKey === key) fState.sortAsc = !fState.sortAsc;
+        else { fState.sortKey = key; fState.sortAsc = !numeric; }
+        renderFleet();
+      });
+    });
+  }
+
+  var VIEW_TITLES = { companies: 'Registrations', machines: 'Machines', fleet: 'Our fleet' };
+
   function setView(view) {
     state.view = view;
-    var machines = view === 'machines';
-    $('companiesView').classList.toggle('hidden', machines);
-    $('machinesView').classList.toggle('hidden', !machines);
-    $('viewTitle').textContent = machines ? 'Machines' : 'Registrations';
+    $('companiesView').classList.toggle('hidden', view !== 'companies');
+    $('machinesView').classList.toggle('hidden', view !== 'machines');
+    $('fleetView').classList.toggle('hidden', view !== 'fleet');
+    $('viewTitle').textContent = VIEW_TITLES[view] || 'Registrations';
+
+    // The KPI tiles describe the subcontractor data, so they belong with
+    // those views. Our fleet carries its own.
+    $('statRow').classList.toggle('hidden', view === 'fleet');
+
     document.querySelectorAll('.view-btn').forEach(function (b) {
       b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === view));
     });
-    if (machines) loadAllEquipment();
+
+    if (view === 'machines') loadAllEquipment();
+    if (view === 'fleet') loadFleet();
   }
 
   function wireMachinesView() {
@@ -1012,6 +1211,33 @@
                          'cliente', 'proveedor', 'contratista', 'subcontratista', 'firma'];
 
   var imp = null;   // { fileName, sheets, sheetIdx, headerIdx, map, companyCol }
+  var importMode = 'companies';   // or 'fleet'
+
+  // The own-fleet file is a different shape: quantities per equipment type
+  // rather than one row per machine.
+  var FLEET_FIELDS = [
+    { key: 'equipment',    label: 'Equipment' },
+    { key: 'make',         label: 'Make' },
+    { key: 'model',        label: 'Model' },
+    { key: 'qtyAvailable', label: 'Qty available' },
+    { key: 'qtyRequired',  label: 'Qty needed' },
+    { key: 'intendedUse',  label: 'Intended use' },
+    { key: 'ref',          label: 'Reference' },
+    { key: 'notes',        label: 'Notes' }
+  ];
+
+  var FLEET_ALIASES = {
+    equipment:    ['equipment', 'equipo', 'maquina', 'tipo', 'type', 'descripcion', 'description'],
+    make:         ['make', 'marca', 'brand', 'fabricante', 'manufacturer'],
+    model:        ['model', 'modelo', 'modelcapacityknown', 'modelocapacidad'],
+    qtyAvailable: ['qtyavailable', 'ansadqtyavailable', 'available', 'disponible', 'cantidaddisponible',
+                   'qtyactuallyavailablecommitted', 'existencia', 'stock'],
+    qtyRequired:  ['qtyrequired', 'qtyspirtasrequireforvenezuela', 'qtyspirtasrequire', 'required',
+                   'requerido', 'necesario', 'cantidadrequerida', 'need'],
+    intendedUse:  ['intendeduse', 'intendedvenezuelause', 'uso', 'usoprevisto', 'purpose', 'aplicacion'],
+    ref:          ['ref', 'referencia', 'reference', 'codigo', 'code'],
+    notes:        ['notes', 'notas', 'comments', 'comentarios', 'observaciones', 'remarks']
+  };
 
   function normHeader(s) {
     return String(s || '')
@@ -1031,6 +1257,19 @@
 
   function fieldFor(header) {
     var cands = headerCands(header);
+
+    // In fleet mode only the fleet vocabulary applies — the two files mean
+    // different things by the same words ("model" is a machine model in both,
+    // but "qty" is a stock level here and a line multiplier there).
+    if (importMode === 'fleet') {
+      var fkeys = Object.keys(FLEET_ALIASES);
+      for (var f = 0; f < fkeys.length; f++) {
+        for (var a = 0; a < FLEET_ALIASES[fkeys[f]].length; a++) {
+          if (cands.indexOf(FLEET_ALIASES[fkeys[f]][a]) !== -1) return fkeys[f];
+        }
+      }
+      return null;
+    }
 
     // The admin-only fields are checked first because they are the more
     // specific reading: a column called YEAR is a year, not an age, and
@@ -1188,7 +1427,8 @@
           esc(c.label) + '</option>';
       }).join('');
 
-    $('admMap').innerHTML = IMPORT_FIELDS.map(function (f) {
+    var fields = importMode === 'fleet' ? FLEET_FIELDS : IMPORT_FIELDS;
+    $('admMap').innerHTML = fields.map(function (f) {
       return '<label class="map-row"><span class="map-field">' + esc(f.label) + '</span>' +
         '<select data-impfield="' + f.key + '"><option value="">— not in my file —</option>' +
         cols.map(function (c) {
@@ -1200,7 +1440,75 @@
     renderImportSummary();
   }
 
+  // Fleet files are read as one row per equipment type, no company grouping.
+  function fleetRows() {
+    var sh = impSheet();
+    if (!sh) return [];
+    var cols = impCols();
+    var mapped = {};
+    Object.keys(imp.map).forEach(function (k) {
+      if (imp.map[k] != null) mapped[imp.map[k]] = k;
+    });
+
+    var out = [];
+    for (var i = imp.headerIdx + 1; i < sh.rows.length; i++) {
+      var raw = sh.rows[i];
+      if (!raw || !raw.some(function (c) { return String(c == null ? '' : c).trim(); })) continue;
+      var item = {}, any = false;
+      for (var c = 0; c < cols.length; c++) {
+        var v = String(raw[c] == null ? '' : raw[c]).trim();
+        if (!v || /^(n\/d|n\/a|-|to confirm)$/i.test(v)) continue;
+        if (mapped[c]) { item[mapped[c]] = v; any = true; }
+      }
+      if (!any || !item.equipment) continue;
+      // Quantities arrive as things like "4 total" or "16 of 50".
+      ['qtyAvailable', 'qtyRequired'].forEach(function (k) {
+        if (item[k]) {
+          var m = String(item[k]).match(/\d+/);
+          item[k] = m ? m[0] : '';
+        }
+      });
+      out.push(item);
+    }
+    return out;
+  }
+
+  function renderFleetSummary() {
+    var rows = fleetRows();
+    imp.fleetRows = rows;
+    var avail = rows.reduce(function (n, r) { return n + (parseInt(r.qtyAvailable, 10) || 0); }, 0);
+    var need  = rows.reduce(function (n, r) { return n + (parseInt(r.qtyRequired, 10) || 0); }, 0);
+
+    if (!rows.length) {
+      $('admSummary').innerHTML = '<p class="import-warn">No equipment rows found with these settings. Check the sheet and header row.</p>';
+      $('admPreview').innerHTML = '';
+      $('admCount').textContent = '';
+      $('admConfirm').disabled = true;
+      return;
+    }
+    $('admConfirm').disabled = false;
+
+    $('admSummary').innerHTML =
+      '<p class="adm-found"><strong>' + fmtNum(rows.length) + '</strong> equipment types · <strong>' +
+      fmtNum(avail) + '</strong> available · <strong>' + fmtNum(need) + '</strong> needed</p>';
+
+    $('admPreview').innerHTML =
+      '<table class="import-preview-table"><thead><tr><th>Equipment</th><th>Make</th><th>Model</th>' +
+      '<th class="num">Avail</th><th class="num">Need</th></tr></thead><tbody>' +
+      rows.slice(0, 10).map(function (r) {
+        return '<tr><td>' + esc(r.equipment) + '</td><td>' + esc(r.make || '') + '</td><td>' +
+          esc(r.model || '') + '</td><td class="num">' + esc(r.qtyAvailable || '0') +
+          '</td><td class="num">' + esc(r.qtyRequired || '0') + '</td></tr>';
+      }).join('') +
+      (rows.length > 10 ? '<tr><td colspan="5" class="muted-cell">…and ' + (rows.length - 10) + ' more</td></tr>' : '') +
+      '</tbody></table>';
+
+    $('admCount').textContent = 'Ready: ' + fmtNum(rows.length) + ' equipment types';
+  }
+
   function renderImportSummary() {
+    if (importMode === 'fleet') { renderFleetSummary(); return; }
+
     var groups = impGroups();
     imp.groups = groups;
     var machines = groups.reduce(function (n, g) { return n + g.items.length; }, 0);
@@ -1277,7 +1585,38 @@
 
   // Companies go in one at a time so a failure names the company it failed
   // on and everything before it is already saved.
+  function runFleetImport() {
+    var rows = imp.fleetRows || [];
+    if (!rows.length) return;
+
+    $('admConfirm').disabled = true;
+    $('admCancel').disabled = true;
+    $('admProgress').classList.remove('hidden');
+    $('admBarFill').style.width = '40%';
+    $('admProgressText').textContent = 'Importing ' + rows.length + ' equipment types…';
+
+    client.rpc('import_own_fleet', {
+      payload: { owner: 'ANSAD', items: rows, units: [] }
+    }).then(function (res) {
+      $('admBarFill').style.width = '100%';
+      $('admCancel').disabled = false;
+      if (res.error) {
+        $('admProgressText').textContent = 'Import failed';
+        toast('Fleet import failed: ' + res.error.message, true);
+        return;
+      }
+      var r = res.data || {};
+      $('admProgressText').textContent = 'Imported ' + (r.items || rows.length) + ' equipment types';
+      toast((r.items || rows.length) + ' equipment types imported');
+      fState.all = null;
+      if (state.view === 'fleet') loadFleet(); else setView('fleet');
+      setTimeout(closeImport, 1200);
+    });
+  }
+
   function runImport() {
+    if (importMode === 'fleet') { runFleetImport(); return; }
+
     var groups = imp.groups || [];
     if (!groups.length) return;
 
@@ -1343,6 +1682,20 @@
 
   function wireImport() {
     $('importOpenBtn').addEventListener('click', openImport);
+
+    document.querySelectorAll('input[name="importMode"]').forEach(function (r) {
+      r.addEventListener('change', function () {
+        importMode = r.value;
+        // The company column only means something for a subcontractor file.
+        $('admCompanyCol').closest('.import-ctl').classList.toggle('hidden', importMode === 'fleet');
+        if (imp) {
+          var g = impAutoMap();
+          imp.map = g.map;
+          imp.companyCol = importMode === 'fleet' ? null : g.companyCol;
+          renderImportPanel();
+        }
+      });
+    });
     $('importClose').addEventListener('click', closeImport);
     $('admCancel').addEventListener('click', closeImport);
     $('admConfirm').addEventListener('click', runImport);
@@ -1409,6 +1762,7 @@
      ------------------------------------------------------- */
   function wireDashboard() {
     wireMachinesView();
+    wireFleetView();
     wireImport();
     $('refreshBtn').addEventListener('click', function () {
       state.equipment = {};
@@ -1485,6 +1839,7 @@
       var kind = b.getAttribute('data-export');
       // In the machines view, export what the machine filters are showing
       // rather than the company list behind them.
+      if (state.view === 'fleet' && fState.all) { exportFleet(kind); return; }
       if (state.view === 'machines' && mState.all) { exportMachineView(kind); return; }
       if (kind === 'companies') exportCompanies();
       else if (kind === 'equipment') exportEquipment();

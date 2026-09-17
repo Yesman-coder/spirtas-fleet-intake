@@ -592,3 +592,52 @@ tr.row-detail > td { padding: 0; background: var(--surface-2); border-bottom: 1p
   .answer-what { font-size: 16px; }
   .answer-by { justify-content: flex-start; }
 }
+
+/* ---------- Our fleet ---------- */
+.fleet-lede { margin: 0 0 18px; font-size: 13.5px; color: var(--muted); max-width: 70ch; }
+.fleet-table td { padding: 10px 14px; }
+.fleet-use { color: var(--muted); font-size: 12.5px; max-width: 320px; }
+.gap-short {
+  font-weight: 600;
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+.gap-ok { color: var(--brand-green-dark); font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; }
+/* Marks a capacity read off the model number rather than stated in the file. */
+.est {
+  border: none;
+  text-decoration: none;
+  color: var(--muted);
+  cursor: help;
+  margin-left: 2px;
+  font-size: 11px;
+}
+.check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  color: var(--ink);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.check-inline input { width: auto; margin: 0; }
+
+/* ---------- Import mode ---------- */
+.import-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.mode-opt {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  background: var(--surface);
+}
+.mode-opt:has(input:checked) { border-color: var(--brand-green); background: var(--brand-green-tint); }
+.mode-opt input { width: auto; margin: 2px 0 0; flex: none; }
+.mode-opt span { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.mode-opt strong { display: block; font-size: 13.5px; color: var(--ink); margin-bottom: 2px; }
+
+@media (max-width: 640px) { .import-mode { grid-template-columns: 1fr; } }
