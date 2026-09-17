@@ -463,16 +463,17 @@ function handleFiles(fileList) {
         return;
       }
 
-      importState = { sheets: sheets, sheetIdx: 0, headerIdx: sheets[0].headerIdx, map: {} };
+      importState = {
+        sheets: sheets, sheetIdx: 0, headerIdx: sheets[0].headerIdx,
+        map: {}, fileName: file.name, startIdx: null
+      };
       importState.map = autoMap();
 
-      setUploadStatus(
-        t('importFound')
-          .replace('{file}', file.name)
-          .replace('{sheet}', sheets[0].name)
-          .replace('{row}', String(sheets[0].headerIdx + 1)),
-        'ok'
-      );
+      // Apply it straight away. Making the rows wait behind a confirm button
+      // meant a file could look imported, sit there unapplied, and then fail
+      // submission with "add at least one machine". The panel below is for
+      // correcting the guess, not for granting permission.
+      applyImport();
       renderImportPanel();
     } catch (err) {
       if (window.console) console.error('Fleet Intake: file parse failed', err);
@@ -483,26 +484,58 @@ function handleFiles(fileList) {
   reader.readAsArrayBuffer(file);
 }
 
-function confirmImport() {
+/* Put the imported rows into the list, replacing whatever a previous pass of
+   this same file put there. Called on load and again on every mapping change,
+   so what is on screen is always what would be submitted. */
+function applyImport() {
+  if (!importState) return;
+
+  if (importState.startIdx === null) {
+    // Drop the single empty starter row the first time real data arrives.
+    if (state.equipment.length === 1 && !hasAnyValue(state.equipment[0])) state.equipment.length = 0;
+    importState.startIdx = state.equipment.length;
+  } else {
+    // Re-mapping: throw away this file's previous rows, keep anything typed
+    // by hand before the upload.
+    state.equipment.length = importState.startIdx;
+  }
+
   var rows = importRowsFromMapping();
-  if (!rows.length) return;
-
-  if (state.equipment.length === 1 && !hasAnyValue(state.equipment[0])) state.equipment.length = 0;
   rows.forEach(function (r) { state.equipment.push(r); });
+  importState.appliedCount = rows.length;
 
-  document.getElementById('importPanel').classList.add('hidden');
-  importState = null;
   renderEquipmentTable();
 
-  var msg = t('importDone').replace('{n}', rows.length);
-  if (state.equipment.length > RENDER_WARN_ROWS) msg += ' ' + t('importBigList');
-  setUploadStatus(msg, 'ok');
+  setUploadStatus(
+    rows.length
+      ? t('importFound')
+          .replace('{file}', importState.fileName)
+          .replace('{sheet}', currentSheet().name)
+          .replace('{row}', String(importState.headerIdx + 1)) +
+        ' ' + t('importDone').replace('{n}', rows.length)
+      : t('importNoRows'),
+    rows.length ? 'ok' : 'err'
+  );
+}
 
+/* The panel's button only dismisses it — the rows are already in. */
+function confirmImport() {
+  document.getElementById('importPanel').classList.add('hidden');
+  importState = null;
   switchTab('manual');
-  document.querySelector('.eq-table-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  var target = document.getElementById('compactView');
+  if (!target || target.classList.contains('hidden')) target = document.querySelector('.eq-table-wrap');
+  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function cancelImport() {
+  // The rows are already in the list, so cancelling has to take them back
+  // out again, leaving anything typed by hand before the upload.
+  if (importState && importState.startIdx !== null) {
+    state.equipment.length = importState.startIdx;
+    if (!state.equipment.length) state.equipment.push(blankRow());
+    renderEquipmentTable();
+  }
   importState = null;
   document.getElementById('importPanel').classList.add('hidden');
   setUploadStatus('', '');
@@ -756,12 +789,14 @@ function init() {
     // guess has to be made again rather than carried over.
     importState.headerIdx = currentSheet().headerIdx;
     importState.map = autoMap();
+    applyImport();
     renderImportPanel();
   });
 
   document.getElementById('importHeaderRow').addEventListener('change', function (e) {
     importState.headerIdx = Number(e.target.value);
     importState.map = autoMap();
+    applyImport();
     renderImportPanel();
   });
 
@@ -778,6 +813,7 @@ function init() {
       });
     }
     importState.map[field] = val;
+    applyImport();
     renderImportPanel();
   });
 
