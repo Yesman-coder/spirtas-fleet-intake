@@ -13,6 +13,10 @@
    State
    --------------------------------------------------------- */
 var EQ_COLS = ['brand', 'type', 'model', 'unitId', 'capacity', 'age', 'location', 'price', 'contact'];
+
+/* Above this many rows the editable table gets heavy enough to be worth
+   warning about (nine inputs per row). The submission itself is unaffected. */
+var RENDER_WARN_ROWS = 300;
 var PLACEHOLDER_KEY = {
   brand: 'placeholderBrand', type: 'placeholderType', model: 'placeholderModel',
   unitId: 'placeholderId', capacity: 'placeholderCapacity', age: 'placeholderAge',
@@ -196,10 +200,21 @@ function handleFiles(fileList) {
         }
       }
       renderEquipmentTable();
-      setUploadStatus(
-        added + ' ' + (currentLang === 'es' ? (added === 1 ? 'fila importada' : 'filas importadas') : (added === 1 ? 'row imported' : 'rows imported')),
-        added ? 'ok' : 'err'
-      );
+
+      var msg = added + ' ' + (currentLang === 'es'
+        ? (added === 1 ? 'fila importada' : 'filas importadas')
+        : (added === 1 ? 'row imported' : 'rows imported'));
+
+      // Every row is nine text inputs. Past a few hundred that is tens of
+      // thousands of DOM nodes, which makes the page crawl on a normal
+      // laptop even though the parse itself was fine. Say so plainly
+      // instead of letting it look like the upload failed.
+      if (state.equipment.length > RENDER_WARN_ROWS) {
+        msg += currentLang === 'es'
+          ? '. Es una lista muy larga — la tabla puede tardar en responder. Puede enviarla igualmente.'
+          : '. That is a long list, so the table below may feel slow. You can still submit it.';
+      }
+      setUploadStatus(msg, added ? 'ok' : 'err');
     } catch (err) {
       if (window.console) console.error('Fleet Intake: file parse failed', err);
       setUploadStatus(currentLang === 'es' ? 'No se pudo leer ese archivo.' : 'Could not read that file.', 'err');

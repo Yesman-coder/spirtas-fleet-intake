@@ -76,6 +76,35 @@
 }
 .admin-actions { display: flex; gap: 10px; align-items: center; }
 
+/* ---------- Companies / Machines toggle ---------- */
+.view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; margin-top: 10px; }
+.view-btn {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 7px 16px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.view-btn:last-child { border-right: none; }
+.view-btn[aria-pressed="true"] { background: var(--brand-green); color: #fff; }
+
+/* ---------- Machines table ---------- */
+.machines-table { font-size: 12.5px; }
+.machines-table td { padding: 9px 12px; vertical-align: top; }
+.cell-company-sm { font-weight: 600; max-width: 210px; }
+.mono-sm { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+/* Spanish label sits under the English one wherever the two differ. */
+.bi-es { display: block; color: var(--muted); font-size: 11px; margin-top: 1px; }
+.machines-table td:empty::after { content: '—'; color: var(--border); }
+
+#machinesView .filter-row select { max-width: 210px; }
+
 .export-group { position: relative; }
 .export-menu {
   position: absolute;

@@ -477,7 +477,7 @@
     $('loadMoreBtn').classList.toggle('hidden', !state.hasMore);
 
     // Reflect the active sort in the header
-    var ths = document.querySelectorAll('.admin-table th.sortable');
+    var ths = document.querySelectorAll('#companiesView th.sortable');
     for (var i = 0; i < ths.length; i++) {
       var key = ths[i].getAttribute('data-sort');
       if (key === state.sortKey) ths[i].setAttribute('aria-sort', state.sortAsc ? 'ascending' : 'descending');
@@ -632,6 +632,40 @@
     });
   }
 
+  // Exports exactly the rows the machine filters are showing, in both
+  // languages, so a filtered view is something you can hand to someone.
+  var MACHINE_HEADERS = [
+    'Company', 'Ref', 'Brand', 'Type (EN)', 'Type (ES)', 'Model', 'Unit ID',
+    'Family (EN)', 'Family (ES)', 'Year', 'Qty', 'Capacity', 'Age',
+    'Location (EN)', 'Location (ES)', 'Price/Day', 'Condition', 'Contact'
+  ];
+
+  function machineAoa() {
+    return [MACHINE_HEADERS].concat(mState.filtered.map(function (r) {
+      return [
+        r.company_name, r.source_ref || '', r.brand || '', r.type || '', r.type_es || '',
+        r.model || '', r.unit_id || '', r.machine_family || '', r.machine_family_es || '',
+        r.year || '', r.qty || 1, r.capacity || '', r.age || '',
+        r.location || '', r.location_es || '', r.price || '', r.condition || '', r.contact || ''
+      ];
+    }));
+  }
+
+  function exportMachineView(kind) {
+    if (!mState.filtered.length) { toast('Nothing to export with these filters.', true); return; }
+    var rows = machineAoa();
+
+    if (kind === 'combined' && typeof XLSX !== 'undefined') {
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Machines');
+      XLSX.writeFile(wb, 'fleet-machines-' + stamp() + '.xlsx');
+    } else {
+      download(new Blob(['﻿' + toCsv(rows)], { type: 'text/csv;charset=utf-8;' }),
+        'fleet-machines-' + stamp() + '.csv');
+    }
+    toast(fmtNum(rows.length - 1) + ' machines exported');
+  }
+
   function exportSingle(id) {
     var row = null;
     for (var i = 0; i < state.rows.length; i++) {
@@ -648,13 +682,254 @@
       'fleet-intake-' + String(row.company_name || 'company').replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '.csv');
   }
 
+  /* =======================================================
+     Machines view
+
+     The whole equipment set is pulled once and filtered in the
+     browser. At this size (~1,100 rows, well under a megabyte)
+     that makes every filter instant with no round trip, and lets
+     a search match across the company join without the server
+     having to model it. Past roughly 20,000 rows this should move
+     back to the server — see the note in 002-master-import-schema.sql.
+     ======================================================= */
+
+  var mState = {
+    all: null,          // every machine, loaded once
+    filtered: [],
+    shown: 0,
+    search: '', company: '', family: '', brand: '', year: '',
+    sortKey: 'company_name', sortAsc: true
+  };
+  var M_PAGE = 200;
+
+  // Accent-insensitive compare, so "BOGOTA" finds "Bogotá" and
+  // "ANTIGUEDAD" finds "ANTIGÜEDAD". The data comes from ten companies
+  // typing in two languages, so this matters.
+  function fold(s) {
+    return String(s == null ? '' : s)
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toLowerCase();
+  }
+
+  function loadAllEquipment() {
+    if (mState.all) { renderMachines(); return; }
+    $('mLoading').classList.remove('hidden');
+
+    // PostgREST caps a response at 1000 rows, so page until it runs dry.
+    var acc = [];
+    function page(from) {
+      client.from('equipment')
+        .select('id,row_index,brand,type,type_es,model,unit_id,capacity,age,location,location_es,price,contact,machine_family,machine_family_es,condition,year,qty,submission_id,submissions!inner(company_name,status,source)')
+        .order('id', { ascending: true })
+        .range(from, from + 999)
+        .then(function (res) {
+          if (res.error) {
+            $('mLoading').classList.add('hidden');
+            toast('Could not load machines: ' + res.error.message, true);
+            return;
+          }
+          var batch = res.data || [];
+          acc = acc.concat(batch);
+          if (batch.length === 1000) { page(from + 1000); return; }
+
+          mState.all = acc.map(function (r) {
+            var s = r.submissions || {};
+            r.company_name = s.company_name || '';
+            r.company_status = s.status || '';
+            r.source = s.source || 'web';
+            r._hay = fold([
+              r.company_name, r.brand, r.type, r.type_es, r.model, r.unit_id,
+              r.machine_family, r.machine_family_es, r.location, r.location_es, r.condition
+            ].join(' '));
+            return r;
+          });
+          $('mLoading').classList.add('hidden');
+          buildMachineFilters();
+          renderMachines();
+        });
+    }
+    page(0);
+  }
+
+  function buildMachineFilters() {
+    function fill(id, values, label) {
+      var sel = $(id);
+      var keep = sel.value;
+      sel.innerHTML = '<option value="">' + label + '</option>' +
+        values.map(function (v) {
+          return '<option value="' + esc(v.k) + '">' + esc(v.k) + ' (' + fmtNum(v.n) + ')</option>';
+        }).join('');
+      sel.value = keep;
+    }
+    function tally(key) {
+      var m = {};
+      mState.all.forEach(function (r) {
+        var v = r[key];
+        if (v == null || v === '') return;
+        m[v] = (m[v] || 0) + 1;
+      });
+      return Object.keys(m).map(function (k) { return { k: k, n: m[k] }; })
+        .sort(function (a, b) { return b.n - a.n || a.k.localeCompare(b.k); });
+    }
+    fill('mCompany', tally('company_name'), 'All companies');
+    fill('mFamily',  tally('machine_family'), 'All families');
+    fill('mBrand',   tally('brand'), 'All brands');
+
+    var years = {};
+    mState.all.forEach(function (r) { if (r.year) years[r.year] = (years[r.year] || 0) + 1; });
+    var ys = Object.keys(years).sort(function (a, b) { return b - a; });
+    $('mYear').innerHTML = '<option value="">Any year</option>' +
+      ys.map(function (y) { return '<option value="' + y + '">' + y + ' (' + years[y] + ')</option>'; }).join('');
+  }
+
+  function applyMachineFilters() {
+    var term = fold(mState.search).trim();
+    mState.filtered = mState.all.filter(function (r) {
+      if (mState.company && r.company_name !== mState.company) return false;
+      if (mState.family  && r.machine_family !== mState.family) return false;
+      if (mState.brand   && r.brand !== mState.brand) return false;
+      if (mState.year    && String(r.year) !== mState.year) return false;
+      if (term && r._hay.indexOf(term) === -1) return false;
+      return true;
+    });
+
+    var k = mState.sortKey, asc = mState.sortAsc ? 1 : -1;
+    mState.filtered.sort(function (a, b) {
+      var x = a[k], y = b[k];
+
+      // Missing values sort last in BOTH directions. Two thirds of these
+      // machines have no year, so letting blanks lead on an ascending sort
+      // would bury every row that actually has one.
+      if (k === 'year' || k === 'qty') {
+        var hasX = x != null && x !== '', hasY = y != null && y !== '';
+        if (!hasX && !hasY) return 0;
+        if (!hasX) return 1;
+        if (!hasY) return -1;
+        return (x - y) * asc;
+      }
+
+      x = fold(x); y = fold(y);
+      if (x === y) return fold(a.company_name).localeCompare(fold(b.company_name)) ||
+                          (a.row_index - b.row_index);
+      if (!x) return 1;
+      if (!y) return -1;
+      return x.localeCompare(y) * asc;
+    });
+    mState.shown = Math.min(M_PAGE, mState.filtered.length);
+  }
+
+  function machineRowHtml(r) {
+    // Show the Spanish label under the English one when they differ, so one
+    // table serves both languages without a toggle.
+    function bi(en, es) {
+      if (!en && !es) return '';
+      if (!es || fold(es) === fold(en)) return esc(en || es);
+      return esc(en) + '<small class="bi-es">' + esc(es) + '</small>';
+    }
+    return '<tr>' +
+      '<td class="cell-company-sm">' + esc(r.company_name) + '</td>' +
+      '<td>' + esc(r.brand || '') + '</td>' +
+      '<td>' + bi(r.type, r.type_es) + '</td>' +
+      '<td>' + esc(r.model || '') + '</td>' +
+      '<td class="mono-sm">' + esc(r.unit_id || '') + '</td>' +
+      '<td>' + bi(r.machine_family, r.machine_family_es) + '</td>' +
+      '<td class="num">' + (r.year || '') + '</td>' +
+      '<td class="num">' + (r.qty || 1) + '</td>' +
+      '<td>' + bi(r.location, r.location_es) + '</td>' +
+      '<td>' + esc(r.condition || '') + '</td>' +
+      '</tr>';
+  }
+
+  function renderMachines() {
+    if (!mState.all) return;
+    applyMachineFilters();
+
+    $('mBody').innerHTML = mState.filtered.slice(0, mState.shown).map(machineRowHtml).join('');
+
+    var any = mState.filtered.length > 0;
+    $('mEmpty').classList.toggle('hidden', any);
+    $('mMore').classList.toggle('hidden', mState.shown >= mState.filtered.length);
+
+    var units = mState.filtered.reduce(function (n, r) { return n + (r.qty || 1); }, 0);
+    $('mNote').textContent = any
+      ? 'Showing ' + fmtNum(mState.shown) + ' of ' + fmtNum(mState.filtered.length) +
+        ' machine rows (' + fmtNum(units) + ' units) from ' + fmtNum(mState.all.length) + ' total'
+      : '';
+
+    var ths = document.querySelectorAll('.machines-table th.sortable');
+    for (var i = 0; i < ths.length; i++) {
+      var key = ths[i].getAttribute('data-msort');
+      if (key === mState.sortKey) ths[i].setAttribute('aria-sort', mState.sortAsc ? 'ascending' : 'descending');
+      else ths[i].removeAttribute('aria-sort');
+    }
+  }
+
+  function setView(view) {
+    state.view = view;
+    var machines = view === 'machines';
+    $('companiesView').classList.toggle('hidden', machines);
+    $('machinesView').classList.toggle('hidden', !machines);
+    $('viewTitle').textContent = machines ? 'Machines' : 'Registrations';
+    document.querySelectorAll('.view-btn').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === view));
+    });
+    if (machines) loadAllEquipment();
+  }
+
+  function wireMachinesView() {
+    document.querySelectorAll('.view-btn').forEach(function (b) {
+      b.addEventListener('click', function () { setView(b.getAttribute('data-view')); });
+    });
+
+    var t = null;
+    $('mSearch').addEventListener('input', function (e) {
+      var v = e.target.value;
+      clearTimeout(t);
+      t = setTimeout(function () { mState.search = v; renderMachines(); }, 150);
+    });
+
+    [['mCompany', 'company'], ['mFamily', 'family'], ['mBrand', 'brand'], ['mYear', 'year']]
+      .forEach(function (pair) {
+        $(pair[0]).addEventListener('change', function (e) {
+          mState[pair[1]] = e.target.value;
+          renderMachines();
+        });
+      });
+
+    $('mClear').addEventListener('click', function () {
+      mState.search = mState.company = mState.family = mState.brand = mState.year = '';
+      $('mSearch').value = '';
+      ['mCompany', 'mFamily', 'mBrand', 'mYear'].forEach(function (id) { $(id).value = ''; });
+      renderMachines();
+    });
+
+    $('mMore').addEventListener('click', function () {
+      mState.shown = Math.min(mState.shown + M_PAGE, mState.filtered.length);
+      $('mBody').innerHTML = mState.filtered.slice(0, mState.shown).map(machineRowHtml).join('');
+      $('mMore').classList.toggle('hidden', mState.shown >= mState.filtered.length);
+      renderMachines();
+    });
+
+    document.querySelectorAll('.machines-table th.sortable').forEach(function (th) {
+      th.addEventListener('click', function () {
+        var key = th.getAttribute('data-msort');
+        if (mState.sortKey === key) mState.sortAsc = !mState.sortAsc;
+        else { mState.sortKey = key; mState.sortAsc = (key !== 'year' && key !== 'qty'); }
+        renderMachines();
+      });
+    });
+  }
+
   /* -------------------------------------------------------
      Wiring
      ------------------------------------------------------- */
   function wireDashboard() {
+    wireMachinesView();
     $('refreshBtn').addEventListener('click', function () {
       state.equipment = {};
+      mState.all = null;              // force the machine set to reload too
       reload();
+      if (state.view === 'machines') loadAllEquipment();
     });
 
     var searchTimer = null;
@@ -684,7 +959,7 @@
 
     $('loadMoreBtn').addEventListener('click', function () { fetchPage(true); });
 
-    document.querySelectorAll('.admin-table th.sortable').forEach(function (th) {
+    document.querySelectorAll('#companiesView th.sortable').forEach(function (th) {
       th.addEventListener('click', function () {
         var key = th.getAttribute('data-sort');
         if (state.sortKey === key) state.sortAsc = !state.sortAsc;
@@ -723,6 +998,9 @@
       exportMenu.classList.add('hidden');
       exportBtn.setAttribute('aria-expanded', 'false');
       var kind = b.getAttribute('data-export');
+      // In the machines view, export what the machine filters are showing
+      // rather than the company list behind them.
+      if (state.view === 'machines' && mState.all) { exportMachineView(kind); return; }
       if (kind === 'companies') exportCompanies();
       else if (kind === 'equipment') exportEquipment();
       else exportCombined();

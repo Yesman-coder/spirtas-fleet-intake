@@ -58,7 +58,11 @@
   <section class="admin-head">
     <div>
       <p class="eyebrow">Equipment Network</p>
-      <h1>Registrations</h1>
+      <h1 id="viewTitle">Registrations</h1>
+      <div class="view-toggle" role="group" aria-label="Choose a view">
+        <button type="button" class="view-btn" data-view="companies" aria-pressed="true">Companies</button>
+        <button type="button" class="view-btn" data-view="machines" aria-pressed="false">Machines</button>
+      </div>
     </div>
     <div class="admin-actions">
       <button type="button" class="btn" id="refreshBtn" title="Reload from the database">Refresh</button>
@@ -107,6 +111,8 @@
       </div>
     </div>
   </section>
+
+  <div id="companiesView">
 
   <!-- Filters -->
   <section class="filter-row">
@@ -160,6 +166,56 @@
   <div class="load-more-row">
     <button type="button" class="btn hidden" id="loadMoreBtn">Load older registrations</button>
   </div>
+  </div><!-- /companiesView -->
+
+  <!-- ===================== Machines view ===================== -->
+  <div id="machinesView" class="hidden">
+
+    <section class="filter-row">
+      <div class="filter-search">
+        <input type="search" id="mSearch" placeholder="Search brand, model, type, unit ID, company, location…" aria-label="Search machines">
+      </div>
+      <select id="mCompany" aria-label="Filter by company"><option value="">All companies</option></select>
+      <select id="mFamily"  aria-label="Filter by machine family"><option value="">All families</option></select>
+      <select id="mBrand"   aria-label="Filter by brand"><option value="">All brands</option></select>
+      <select id="mYear"    aria-label="Filter by year"><option value="">Any year</option></select>
+      <button type="button" class="btn btn-sm" id="mClear">Clear</button>
+    </section>
+
+    <p class="result-note" id="mNote"></p>
+
+    <section class="card table-card">
+      <div class="table-scroll">
+        <table class="admin-table machines-table">
+          <thead>
+            <tr>
+              <th class="sortable" data-msort="company_name">Company</th>
+              <th class="sortable" data-msort="brand">Brand</th>
+              <th class="sortable" data-msort="type">Type</th>
+              <th class="sortable" data-msort="model">Model</th>
+              <th>Unit ID</th>
+              <th class="sortable" data-msort="machine_family">Family</th>
+              <th class="num sortable" data-msort="year">Year</th>
+              <th class="num sortable" data-msort="qty">Qty</th>
+              <th>Location</th>
+              <th>Condition</th>
+            </tr>
+          </thead>
+          <tbody id="mBody"></tbody>
+        </table>
+      </div>
+      <div class="table-loading" id="mLoading"><span class="spinner" aria-hidden="true"></span> Loading machines…</div>
+      <div class="table-empty hidden" id="mEmpty">
+        <p class="empty-title">No machines match</p>
+        <p class="empty-body">Try clearing a filter or widening the search.</p>
+      </div>
+    </section>
+
+    <div class="load-more-row">
+      <button type="button" class="btn hidden" id="mMore">Show more machines</button>
+    </div>
+
+  </div><!-- /machinesView -->
 
 </main>
 
