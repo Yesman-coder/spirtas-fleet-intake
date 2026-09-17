@@ -131,7 +131,8 @@
   <section class="card success-panel" id="successPanel">
     <div class="check">&#10003;</div>
     <h2 data-i18n="successTitle">Thank you — your submission is on its way</h2>
-    <p data-i18n="successBody">We've sent your company details and machinery list to our team. If you don't hear from us within a few business days, please reach out directly.</p>
+    <p data-i18n="successBody">Your company details and machinery list are saved in our fleet database. Our team reviews new registrations within a few business days.</p>
+    <p class="success-ref hidden" id="successRef"></p>
     <button type="button" class="btn" id="downloadCopyBtn" data-i18n="downloadCopy">Download a copy of what you submitted</button>
     <br><br>
     <button type="button" class="btn btn-ghost" id="submitAnotherBtn" data-i18n="submitAnother">Submit another registration</button>
@@ -143,13 +144,8 @@
   <p data-i18n="footer">© <span id="year"></span> Spirtas Worldwide — Complete Risk Transfer™</p>
 </footer>
 
-<!-- hidden form + iframe used to POST to Google Apps Script without a CORS round trip -->
-<iframe name="hiddenSubmitFrame" class="hidden" title="submission frame"></iframe>
-<form id="hiddenPostForm" method="POST" target="hiddenSubmitFrame" class="hidden">
-  <input type="hidden" name="payload" id="hiddenPayload">
-</form>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="assets/config.js"></script>
 <script src="assets/i18n.js"></script>
 <script src="assets/app.js"></script>
 </body>

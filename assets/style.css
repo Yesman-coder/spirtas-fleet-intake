@@ -188,7 +188,8 @@ label {
   font-weight: 600;
 }
 label .req { color: var(--danger); margin-left: 2px; }
-input[type="text"], input[type="email"], input[type="tel"], input[type="search"], textarea, select {
+input[type="text"], input[type="email"], input[type="tel"], input[type="search"],
+input[type="password"], textarea, select {
   width: 100%;
   font-family: var(--font-body);
   font-size: 14.5px;
@@ -327,6 +328,17 @@ table.eq-table { border-collapse: collapse; width: 100%; min-width: 980px; font-
 }
 .success-panel h2 { border: none; }
 .success-panel p { color: var(--muted); max-width: 48ch; margin: 8px auto; }
+.success-ref {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: .06em;
+  color: var(--ink) !important;
+  background: var(--brand-green-tint);
+  border-radius: 8px;
+  padding: 9px 14px;
+  display: inline-block;
+  margin: 14px auto 4px !important;
+}
 
 .hidden { display: none !important; }
 

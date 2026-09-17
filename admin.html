@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet Intake Admin — Spirtas Worldwide</title>
+<meta name="description" content="Internal dashboard for reviewing fleet intake registrations.">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="assets/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/admin.css">
+</head>
+<body class="admin-body">
+
+<header class="topbar">
+  <div class="topbar-inner admin-topbar-inner">
+    <div class="brand">
+      <img src="assets/logo.png" alt="Spirtas Worldwide">
+      <div class="brand-copy">
+        <span class="brand-name">SPIRTAS WORLDWIDE</span>
+        <span class="brand-tag">Fleet Intake · Admin</span>
+      </div>
+    </div>
+    <div class="admin-session hidden" id="sessionBar">
+      <span class="admin-user" id="userEmail"></span>
+      <button type="button" class="btn btn-ghost btn-sm" id="signOutBtn">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<!-- ===================== Sign in ===================== -->
+<main class="wrap auth-wrap" id="authView">
+  <section class="card auth-card">
+    <h1 class="auth-title">Admin sign in</h1>
+    <p class="auth-lede">This dashboard shows every company that has registered through the fleet intake form.</p>
+
+    <form id="signInForm" novalidate>
+      <div class="field" id="field-authEmail">
+        <label for="authEmail">Email</label>
+        <input type="email" id="authEmail" autocomplete="username" required>
+      </div>
+      <div class="field" id="field-authPassword">
+        <label for="authPassword">Password</label>
+        <input type="password" id="authPassword" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" id="signInBtn">Sign in</button>
+      <p id="authStatus"></p>
+    </form>
+  </section>
+</main>
+
+<!-- ===================== Dashboard ===================== -->
+<main class="wrap admin-wrap hidden" id="dashView">
+
+  <section class="admin-head">
+    <div>
+      <p class="eyebrow">Equipment Network</p>
+      <h1>Registrations</h1>
+    </div>
+    <div class="admin-actions">
+      <button type="button" class="btn" id="refreshBtn" title="Reload from the database">Refresh</button>
+      <div class="export-group">
+        <button type="button" class="btn btn-primary" id="exportBtn" aria-haspopup="true" aria-expanded="false">Download CSV</button>
+        <div class="export-menu hidden" id="exportMenu" role="menu">
+          <button type="button" role="menuitem" data-export="companies">
+            <strong>Companies</strong>
+            <span>One row per registration</span>
+          </button>
+          <button type="button" role="menuitem" data-export="equipment">
+            <strong>Equipment</strong>
+            <span>One row per machine, with its company</span>
+          </button>
+          <button type="button" role="menuitem" data-export="combined">
+            <strong>Everything</strong>
+            <span>Both sheets in one workbook (.xlsx)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- KPI tiles -->
+  <section class="stat-row" id="statRow">
+    <div class="stat">
+      <span class="stat-label">Companies</span>
+      <span class="stat-value" id="statCompanies">—</span>
+      <span class="stat-foot" id="statCompaniesFoot">&nbsp;</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Machines listed</span>
+      <span class="stat-value" id="statMachines">—</span>
+      <span class="stat-foot" id="statMachinesFoot">&nbsp;</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">New this week</span>
+      <span class="stat-value" id="statWeek">—</span>
+      <span class="stat-foot" id="statWeekFoot">&nbsp;</span>
+    </div>
+    <div class="stat stat-trend">
+      <span class="stat-label">Registrations · last 12 weeks</span>
+      <div class="spark-wrap">
+        <svg id="sparkline" class="spark" viewBox="0 0 320 64" preserveAspectRatio="none" role="img" aria-label="Weekly registrations over the last 12 weeks"></svg>
+        <div class="spark-tip hidden" id="sparkTip"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Filters -->
+  <section class="filter-row">
+    <div class="filter-search">
+      <input type="search" id="searchInput" placeholder="Search company, contact, email, phone, reference…" aria-label="Search registrations">
+    </div>
+    <div class="seg" role="group" aria-label="Filter by status">
+      <button type="button" class="seg-btn" data-status="all" aria-pressed="true">All</button>
+      <button type="button" class="seg-btn" data-status="new" aria-pressed="false">New</button>
+      <button type="button" class="seg-btn" data-status="reviewed" aria-pressed="false">Reviewed</button>
+      <button type="button" class="seg-btn" data-status="archived" aria-pressed="false">Archived</button>
+    </div>
+    <select id="rangeSelect" aria-label="Filter by date">
+      <option value="all">All time</option>
+      <option value="7">Last 7 days</option>
+      <option value="30">Last 30 days</option>
+      <option value="90">Last 90 days</option>
+    </select>
+  </section>
+
+  <p class="result-note" id="resultNote"></p>
+
+  <!-- Table -->
+  <section class="card table-card">
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th class="col-expand"><span class="sr-only">Expand</span></th>
+            <th class="sortable" data-sort="company_name">Company</th>
+            <th class="sortable" data-sort="contact_person">Contact</th>
+            <th>Email</th>
+            <th>Phone</th>
+            <th class="num sortable" data-sort="equipment_count">Machines</th>
+            <th class="sortable" data-sort="submitted_at" aria-sort="descending">Submitted</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="rowsBody"></tbody>
+      </table>
+    </div>
+    <div class="table-empty hidden" id="emptyState">
+      <p class="empty-title">No registrations yet</p>
+      <p class="empty-body">Submissions from the intake form will appear here the moment they arrive.</p>
+    </div>
+    <div class="table-loading" id="loadingState">
+      <span class="spinner" aria-hidden="true"></span> Loading registrations…
+    </div>
+  </section>
+
+  <div class="load-more-row">
+    <button type="button" class="btn hidden" id="loadMoreBtn">Load older registrations</button>
+  </div>
+
+</main>
+
+<footer class="site-foot">
+  <p>© <span id="year"></span> Spirtas Worldwide — Complete Risk Transfer™</p>
+</footer>
+
+<div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/admin.js"></script>
+</body>
+</html>

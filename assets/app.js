@@ -1,15 +1,13 @@
 /* =========================================================
    Spirtas Worldwide — Fleet Intake
    Front-end logic: bilingual UI, editable equipment table,
-   CSV/XLSX import, and submission to a Google Apps Script
-   web app (which writes rows into a Google Sheet).
+   CSV/XLSX import, and submission to Supabase.
 
-   >>> SETUP: paste your deployed Apps Script Web App URL below. <<<
-   See /apps-script/Code.gs and the project README for how to
-   get this URL (Deploy > New deployment > Web app > copy URL).
+   Connection settings live in assets/config.js. Submissions go
+   to one Postgres function, submit_fleet_intake(), which
+   validates the payload and writes the company plus all of its
+   equipment rows in a single transaction. See supabase/schema.sql.
    ========================================================= */
-
-var APPS_SCRIPT_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
 
 /* ---------------------------------------------------------
    State
@@ -133,15 +131,28 @@ function normalizeHeader(s) {
     .replace(/[^a-z0-9]/g, '');
 }
 
+/* A single header cell often carries both languages ("BRAND / MARCA") or
+   trails a unit ("PRICE PER DAY (24 HR) USD"). normalizeHeader collapses
+   those to one token, so try the whole thing first, then each side of the
+   separator, then the same again with a trailing currency dropped. */
+function headerCandidates(h) {
+  var out = [];
+  function push(v) { if (v && out.indexOf(v) === -1) out.push(v); }
+  push(normalizeHeader(h));
+  String(h || '').split(/[\/|]+/).forEach(function (part) { push(normalizeHeader(part)); });
+  out.slice().forEach(function (v) { push(v.replace(/(usd|eur|ves)$/, '')); });
+  return out;
+}
+
 function mapHeaders(headerRow) {
   var map = {};
   headerRow.forEach(function (h, idx) {
-    var norm = normalizeHeader(h);
+    var cands = headerCandidates(h);
     Object.keys(HEADER_ALIASES).forEach(function (key) {
       if (map[key] != null) return;
       var aliases = HEADER_ALIASES[key];
       for (var i = 0; i < aliases.length; i++) {
-        if (norm === aliases[i]) { map[key] = idx; break; }
+        if (cands.indexOf(aliases[i]) !== -1) { map[key] = idx; break; }
       }
     });
   });
@@ -252,11 +263,24 @@ function updateSteps() {
   setStepDone(2, companyOk && hasUsableEquipment());
 }
 
-function showSuccess() {
+function showSuccess(submissionId) {
   document.getElementById('intakeForm').classList.add('hidden');
   document.querySelector('.steps').classList.add('hidden');
   document.querySelector('.hero').classList.add('hidden');
   document.getElementById('successPanel').classList.add('show');
+
+  // The reference is the real database id, shortened. It gives the company
+  // something concrete to quote back to us, and it is searchable in the
+  // admin dashboard.
+  var refEl = document.getElementById('successRef');
+  if (refEl) {
+    if (submissionId) {
+      refEl.textContent = t('successRef') + ': ' + String(submissionId).slice(0, 8).toUpperCase();
+      refEl.classList.remove('hidden');
+    } else {
+      refEl.classList.add('hidden');
+    }
+  }
   setStepDone(3, true);
 }
 
@@ -312,9 +336,9 @@ function onSubmit(e) {
     statusEl.textContent = t('submitErrEquip');
     return;
   }
-  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf('PASTE_YOUR') === 0) {
+  if (!window.SUPABASE_CONFIG || !window.SUPABASE_CONFIG.isConfigured()) {
     statusEl.className = 'err';
-    statusEl.textContent = 'This form isn’t connected to a spreadsheet yet — set APPS_SCRIPT_URL in assets/app.js.';
+    statusEl.textContent = t('submitErrOffline');
     return;
   }
 
@@ -333,23 +357,52 @@ function onSubmit(e) {
 
   statusEl.className = 'pending';
   statusEl.textContent = t('submitting');
-  document.getElementById('submitBtn').disabled = true;
+  var submitBtn = document.getElementById('submitBtn');
+  submitBtn.disabled = true;
 
-  // Submit via a hidden form targeting a hidden iframe. This is a plain
-  // (non-fetch) POST, so it never triggers a CORS preflight and works
-  // against a Google Apps Script web app with zero extra configuration.
-  // We can't read the iframe's response cross-origin, so we confirm
-  // optimistically after a short delay.
-  var form = document.getElementById('hiddenPostForm');
-  form.action = APPS_SCRIPT_URL;
-  document.getElementById('hiddenPayload').value = JSON.stringify(payload);
-  form.submit();
-
-  setTimeout(function () {
-    document.getElementById('submitBtn').disabled = false;
-    statusEl.textContent = '';
-    showSuccess();
-  }, 1400);
+  // Supabase exposes Postgres functions over HTTP with permissive CORS, so a
+  // plain fetch works from GitHub Pages and we get a real answer back —
+  // success is only shown once the database confirms the write.
+  var cfg = window.SUPABASE_CONFIG;
+  fetch(cfg.url.replace(/\/+$/, '') + '/rest/v1/rpc/submit_fleet_intake', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': cfg.anonKey,
+      'Authorization': 'Bearer ' + cfg.anonKey
+    },
+    body: JSON.stringify({ payload: payload })
+  })
+    .then(function (res) {
+      return res.text().then(function (text) {
+        var body = null;
+        try { body = text ? JSON.parse(text) : null; } catch (e) { /* not json */ }
+        if (!res.ok) {
+          // PostgREST surfaces our raise exception text in `message`.
+          var msg = (body && (body.message || body.hint || body.details)) || ('HTTP ' + res.status);
+          var err = new Error(msg);
+          err.isServer = true;
+          throw err;
+        }
+        return body;
+      });
+    })
+    .then(function (submissionId) {
+      submitBtn.disabled = false;
+      statusEl.className = '';
+      statusEl.textContent = '';
+      showSuccess(submissionId);
+    })
+    .catch(function (err) {
+      submitBtn.disabled = false;
+      statusEl.className = 'err';
+      statusEl.textContent = err && err.isServer
+        ? t('submitErrServer').replace('{msg}', err.message)
+        : t('submitErrNetwork');
+      // The typed list is still on screen and lastPayload is set, so the
+      // company can fix the problem and press submit again, or download
+      // their CSV copy, without retyping anything.
+    });
 }
 
 /* ---------------------------------------------------------

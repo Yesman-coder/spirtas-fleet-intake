@@ -49,9 +49,13 @@ var I18N = {
     submitting: 'Submitting…',
     submitErrCompany: 'Please complete all required company fields.',
     submitErrEquip: 'Add at least one piece of equipment with a brand and model before submitting.',
+    submitErrNetwork: 'We couldn’t reach our servers. Check your connection and try again — nothing was lost.',
+    submitErrServer: 'Your submission was rejected: {msg}',
+    submitErrOffline: 'This form isn’t connected to its database yet. Please contact Spirtas Worldwide directly.',
 
-    successTitle: 'Thank you — your submission is on its way',
-    successBody: 'We’ve sent your company details and machinery list to our team. If you don’t hear from us within a few business days, please reach out directly.',
+    successTitle: 'Thank you — your registration has been received',
+    successBody: 'Your company details and machinery list are saved in our fleet database. Our team reviews new registrations within a few business days.',
+    successRef: 'Reference number',
     downloadCopy: 'Download a copy of what you submitted',
     submitAnother: 'Submit another registration',
 
@@ -112,9 +116,13 @@ var I18N = {
     submitting: 'Enviando…',
     submitErrCompany: 'Complete todos los campos obligatorios de la empresa.',
     submitErrEquip: 'Agregue al menos un equipo con marca y modelo antes de enviar.',
+    submitErrNetwork: 'No pudimos conectar con nuestros servidores. Revise su conexión e inténtelo de nuevo — no se perdió nada.',
+    submitErrServer: 'Su envío fue rechazado: {msg}',
+    submitErrOffline: 'Este formulario aún no está conectado a su base de datos. Por favor contacte directamente a Spirtas Worldwide.',
 
-    successTitle: 'Gracias — su envío está en camino',
-    successBody: 'Hemos enviado los datos de su empresa y la lista de maquinaria a nuestro equipo. Si no recibe respuesta en unos días hábiles, contáctenos directamente.',
+    successTitle: 'Gracias — su registro ha sido recibido',
+    successBody: 'Los datos de su empresa y su lista de maquinaria están guardados en nuestra base de datos de flota. Nuestro equipo revisa los registros nuevos en unos días hábiles.',
+    successRef: 'Número de referencia',
     downloadCopy: 'Descargar una copia de lo enviado',
     submitAnother: 'Enviar otro registro',
 
@@ -142,6 +150,6 @@ var HEADER_ALIASES = {
   capacity: ['capacity', 'capacidad'],
   age: ['age', 'antiguedad', 'edad', 'anio', 'ano'],
   location: ['location', 'ubicacion'],
-  price: ['priceday', 'preciodia', 'price', 'precio', 'dayrate', 'pricedayrate', 'preciopordia'],
+  price: ['priceday', 'preciodia', 'price', 'precio', 'dayrate', 'pricedayrate', 'preciopordia', 'priceperday'],
   contact: ['contact', 'contacto']
 };
