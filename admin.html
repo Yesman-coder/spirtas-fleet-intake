@@ -65,6 +65,7 @@
       </div>
     </div>
     <div class="admin-actions">
+      <button type="button" class="btn" id="importOpenBtn" title="Load a spreadsheet, splitting it by company">Import file</button>
       <button type="button" class="btn" id="refreshBtn" title="Reload from the database">Refresh</button>
       <div class="export-group">
         <button type="button" class="btn btn-primary" id="exportBtn" aria-haspopup="true" aria-expanded="false">Download CSV</button>
@@ -225,9 +226,70 @@
 
 <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
 
+<!-- ===================== Bulk import ===================== -->
+<div class="modal hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importModalTitle">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2 id="importModalTitle">Import a spreadsheet</h2>
+      <button type="button" class="modal-close" id="importClose" aria-label="Close">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <p class="modal-lede">
+        Load a machinery list in whatever shape it arrived in. If one column holds
+        company names, each company is filed as its own registration.
+      </p>
+
+      <div class="upload-drop" id="admDrop">
+        <p><strong>Drop a file here</strong></p>
+        <p class="modal-hint">CSV or Excel — .csv, .xlsx, .xls, .xlsm</p>
+        <button type="button" class="btn" id="admBrowse">Choose file</button>
+        <input type="file" id="admFile" accept=".csv,.xlsx,.xls,.xlsm" class="hidden">
+        <p class="upload-status" id="admStatus"></p>
+      </div>
+
+      <div class="hidden" id="admPanel">
+        <div class="import-controls">
+          <label class="import-ctl hidden" id="admSheetWrap">
+            <span>Sheet</span>
+            <select id="admSheet"></select>
+          </label>
+          <label class="import-ctl">
+            <span>Header row</span>
+            <select id="admHeaderRow"></select>
+          </label>
+          <label class="import-ctl">
+            <span>Company column</span>
+            <select id="admCompanyCol"></select>
+          </label>
+        </div>
+
+        <div class="import-map" id="admMap"></div>
+
+        <div class="adm-summary" id="admSummary"></div>
+        <div class="import-preview" id="admPreview"></div>
+
+        <div class="adm-progress hidden" id="admProgress">
+          <div class="adm-bar"><div class="adm-bar-fill" id="admBarFill"></div></div>
+          <p class="adm-progress-text" id="admProgressText"></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <span class="import-count" id="admCount"></span>
+      <button type="button" class="btn btn-ghost" id="admCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="admConfirm" disabled>Import</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="assets/config.js"></script>
+<!-- HEADER_ALIASES lives here; the importer shares it with the public form
+     so a column spelling learned in one place works in both. -->
+<script src="assets/i18n.js"></script>
 <script src="assets/admin.js"></script>
 </body>
 </html>

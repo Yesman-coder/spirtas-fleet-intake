@@ -920,11 +920,452 @@
     });
   }
 
+  /* =======================================================
+     Bulk import
+
+     The public form registers one company per submission, which is
+     correct: a company is registering itself. A consolidated master
+     file holds many, so splitting one file across companies belongs
+     here, on the admin side, where a column of company names can be
+     turned into one registration each.
+
+     Sheet and header-row detection is the same approach the public
+     form uses, and HEADER_ALIASES is shared via i18n.js.
+     ======================================================= */
+
+  // The nine fields the public form collects, plus the ones only a master
+  // file tends to carry. All of them are real columns, so mapping one here
+  // is better than letting it fall into extras.
+  var IMPORT_FIELDS = [
+    { key: 'brand',     label: 'Brand' },
+    { key: 'type',      label: 'Type / Description' },
+    { key: 'model',     label: 'Model' },
+    { key: 'unitId',    label: 'Unit ID / Serial' },
+    { key: 'capacity',  label: 'Capacity' },
+    { key: 'age',       label: 'Age' },
+    { key: 'year',      label: 'Year' },
+    { key: 'location',  label: 'Location' },
+    { key: 'price',     label: 'Price per day' },
+    { key: 'contact',   label: 'Contact' },
+    { key: 'family',    label: 'Machine family' },
+    { key: 'condition', label: 'Condition / Status' },
+    { key: 'qty',       label: 'Quantity' },
+    { key: 'ref',       label: 'Source reference' }
+  ];
+
+  // Fields the public form has no column for, so their spellings live here
+  // rather than in the shared HEADER_ALIASES.
+  var ADMIN_ALIASES = {
+    year:      ['year', 'ano', 'anio', 'anofabricacion', 'anomodelo', 'modelyear'],
+    family:    ['machinefamily', 'familia', 'familiademaquina', 'family', 'grupo', 'group', 'linea'],
+    condition: ['status', 'estatus', 'estado', 'condition', 'condicion', 'disponibilidad', 'operatividad'],
+    qty:       ['qty', 'cant', 'cantidad', 'quantity', 'unidades', 'units', 'nrounidades'],
+    ref:       ['ref', 'referencia', 'sourceref', 'codigoreferencia']
+  };
+
+  // Column names that mean "this row belongs to company X".
+  var COMPANY_ALIASES = ['company', 'empresa', 'compania', 'companyname', 'razonsocial',
+                         'cliente', 'proveedor', 'contratista', 'subcontratista', 'firma'];
+
+  var imp = null;   // { fileName, sheets, sheetIdx, headerIdx, map, companyCol }
+
+  function normHeader(s) {
+    return String(s || '')
+      .replace(/\(.*?\)/g, ' ')
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  function headerCands(h) {
+    var out = [];
+    function push(v) { if (v && out.indexOf(v) === -1) out.push(v); }
+    push(normHeader(h));
+    String(h || '').split(/[\/|]+/).forEach(function (p) { push(normHeader(p)); });
+    out.slice().forEach(function (v) { push(v.replace(/(usd|eur|ves)$/, '')); });
+    return out;
+  }
+
+  function fieldFor(header) {
+    var cands = headerCands(header);
+
+    // The admin-only fields are checked first because they are the more
+    // specific reading: a column called YEAR is a year, not an age, and
+    // QTY is a quantity rather than anything the form collects.
+    var sets = [ADMIN_ALIASES, window.HEADER_ALIASES || {}];
+    for (var s = 0; s < sets.length; s++) {
+      var keys = Object.keys(sets[s]);
+      for (var k = 0; k < keys.length; k++) {
+        for (var i = 0; i < sets[s][keys[k]].length; i++) {
+          if (cands.indexOf(sets[s][keys[k]][i]) !== -1) return keys[k];
+        }
+      }
+    }
+    return null;
+  }
+
+  function isCompanyHeader(header) {
+    var cands = headerCands(header);
+    for (var i = 0; i < COMPANY_ALIASES.length; i++) {
+      if (cands.indexOf(COMPANY_ALIASES[i]) !== -1) return true;
+    }
+    return false;
+  }
+
+  function scoreRow(row) {
+    if (!row) return -1;
+    var filled = 0, hits = 0, seen = {};
+    for (var i = 0; i < row.length; i++) {
+      var c = String(row[i] == null ? '' : row[i]).trim();
+      if (!c) continue;
+      filled++;
+      var f = fieldFor(c);
+      if (f && !seen[f]) { seen[f] = 1; hits++; }
+      if (isCompanyHeader(c)) hits++;
+    }
+    return hits * 10 + Math.min(filled, 12);
+  }
+
+  function analyzeBook(wb) {
+    var sheets = [];
+    wb.SheetNames.forEach(function (name) {
+      var rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: '' });
+      if (!rows.length) return;
+      var bestIdx = 0, best = -1;
+      for (var i = 0; i < Math.min(25, rows.length); i++) {
+        var s = scoreRow(rows[i]);
+        if (s > best) { best = s; bestIdx = i; }
+      }
+      var data = 0;
+      for (var j = bestIdx + 1; j < rows.length; j++) {
+        if (rows[j] && rows[j].some(function (c) { return String(c == null ? '' : c).trim(); })) data++;
+      }
+      var hits = Math.floor(best / 10);
+      sheets.push({ name: name, rows: rows, headerIdx: bestIdx, dataRows: data,
+                    score: hits * 1000 + Math.min(data, 999) });
+    });
+    sheets.sort(function (a, b) { return b.score - a.score; });
+    return sheets;
+  }
+
+  function impSheet() { return imp && imp.sheets[imp.sheetIdx]; }
+
+  function impCols() {
+    var sh = impSheet();
+    if (!sh) return [];
+    return (sh.rows[imp.headerIdx] || []).map(function (c, i) {
+      var label = String(c == null ? '' : c).trim();
+      return { idx: i, label: label || ('Column ' + (i + 1)) };
+    });
+  }
+
+  function impAutoMap() {
+    var map = {}, companyCol = null;
+    impCols().forEach(function (col) {
+      if (companyCol === null && isCompanyHeader(col.label)) { companyCol = col.idx; return; }
+      var f = fieldFor(col.label);
+      if (f && map[f] == null) map[f] = col.idx;
+    });
+    return { map: map, companyCol: companyCol };
+  }
+
+  // Group the sheet's rows by whatever the company column says.
+  function impGroups() {
+    var sh = impSheet();
+    if (!sh) return [];
+    var cols = impCols();
+    var mapped = {};
+    Object.keys(imp.map).forEach(function (k) {
+      if (imp.map[k] != null) mapped[imp.map[k]] = k;
+    });
+
+    var order = [], byName = {};
+    for (var i = imp.headerIdx + 1; i < sh.rows.length; i++) {
+      var raw = sh.rows[i];
+      if (!raw || !raw.some(function (c) { return String(c == null ? '' : c).trim(); })) continue;
+
+      var company = imp.companyCol == null
+        ? (imp.fallbackName || 'Unnamed company')
+        : String(raw[imp.companyCol] == null ? '' : raw[imp.companyCol]).trim();
+      if (!company) company = '(no company named)';
+
+      var item = {}, extras = {}, any = false;
+      for (var c = 0; c < cols.length; c++) {
+        if (c === imp.companyCol) continue;
+        var v = String(raw[c] == null ? '' : raw[c]).trim();
+        if (!v || v === 'N/D' || v === 'N/A' || v === '-') continue;
+        if (mapped[c]) { item[mapped[c]] = v; any = true; }
+        else { extras[cols[c].label] = v; any = true; }
+      }
+      if (!any) continue;
+      if (Object.keys(extras).length) item.extras = extras;
+      // Plenty of files put a four-digit year in the age column. Keep it as a
+      // year as well so the year filter and sort have something to work with.
+      if (!item.year && item.age && /^(19|20)\d{2}$/.test(item.age)) item.year = item.age;
+      // Guard the numeric columns: anything that is not a clean number is
+      // better dropped here than rejected by the database mid-import.
+      if (item.year && !/^(19|20)\d{2}$/.test(String(item.year).trim())) delete item.year;
+      if (item.qty && !/^\d{1,6}$/.test(String(item.qty).trim())) delete item.qty;
+
+      if (!byName[company]) { byName[company] = []; order.push(company); }
+      byName[company].push(item);
+    }
+    return order.map(function (n) { return { name: n, items: byName[n] }; });
+  }
+
+  function renderImportPanel() {
+    var sh = impSheet();
+    if (!sh) return;
+    $('admPanel').classList.remove('hidden');
+
+    var sheetWrap = $('admSheetWrap');
+    if (imp.sheets.length > 1) {
+      sheetWrap.classList.remove('hidden');
+      $('admSheet').innerHTML = imp.sheets.map(function (s, i) {
+        return '<option value="' + i + '"' + (i === imp.sheetIdx ? ' selected' : '') + '>' +
+          esc(s.name) + ' (' + s.dataRows + ' rows)</option>';
+      }).join('');
+    } else { sheetWrap.classList.add('hidden'); }
+
+    var hopts = [];
+    for (var i = 0; i < Math.min(25, sh.rows.length); i++) {
+      var prev = (sh.rows[i] || []).slice(0, 5)
+        .map(function (c) { return String(c == null ? '' : c).trim(); })
+        .filter(Boolean).join(' · ').slice(0, 52);
+      hopts.push('<option value="' + i + '"' + (i === imp.headerIdx ? ' selected' : '') + '>Row ' +
+        (i + 1) + (prev ? ' — ' + esc(prev) : '') + '</option>');
+    }
+    $('admHeaderRow').innerHTML = hopts.join('');
+
+    var cols = impCols();
+    $('admCompanyCol').innerHTML =
+      '<option value="">— all one company —</option>' +
+      cols.map(function (c) {
+        return '<option value="' + c.idx + '"' + (imp.companyCol === c.idx ? ' selected' : '') + '>' +
+          esc(c.label) + '</option>';
+      }).join('');
+
+    $('admMap').innerHTML = IMPORT_FIELDS.map(function (f) {
+      return '<label class="map-row"><span class="map-field">' + esc(f.label) + '</span>' +
+        '<select data-impfield="' + f.key + '"><option value="">— not in my file —</option>' +
+        cols.map(function (c) {
+          return '<option value="' + c.idx + '"' + (imp.map[f.key] === c.idx ? ' selected' : '') + '>' +
+            esc(c.label) + '</option>';
+        }).join('') + '</select></label>';
+    }).join('');
+
+    renderImportSummary();
+  }
+
+  function renderImportSummary() {
+    var groups = impGroups();
+    imp.groups = groups;
+    var machines = groups.reduce(function (n, g) { return n + g.items.length; }, 0);
+
+    if (!machines) {
+      $('admSummary').innerHTML = '<p class="import-warn">Nothing to import with these settings. Try a different sheet or header row.</p>';
+      $('admPreview').innerHTML = '';
+      $('admCount').textContent = '';
+      $('admConfirm').disabled = true;
+      return;
+    }
+    $('admConfirm').disabled = false;
+
+    $('admSummary').innerHTML =
+      '<p class="adm-found"><strong>' + fmtNum(groups.length) + '</strong> ' +
+      (groups.length === 1 ? 'company' : 'companies') + ' · <strong>' +
+      fmtNum(machines) + '</strong> machines</p>' +
+      (imp.companyCol == null
+        ? '<p class="import-warn">No company column chosen, so everything imports as one company. If this file covers several, pick the column that holds their names.</p>'
+        : '');
+
+    $('admPreview').innerHTML =
+      '<table class="import-preview-table"><thead><tr><th>Company</th><th class="num">Machines</th><th>First machine</th></tr></thead><tbody>' +
+      groups.slice(0, 12).map(function (g) {
+        var f = g.items[0] || {};
+        return '<tr><td>' + esc(g.name) + '</td><td class="num">' + fmtNum(g.items.length) + '</td><td>' +
+          esc([f.brand, f.type, f.model].filter(Boolean).join(' · ').slice(0, 44)) + '</td></tr>';
+      }).join('') +
+      (groups.length > 12 ? '<tr><td colspan="3" class="muted-cell">…and ' + (groups.length - 12) + ' more</td></tr>' : '') +
+      '</tbody></table>';
+
+    $('admCount').textContent = 'Ready: ' + fmtNum(groups.length) + ' ' +
+      (groups.length === 1 ? 'registration' : 'registrations');
+  }
+
+  function handleImportFile(fileList) {
+    var file = fileList && fileList[0];
+    if (!file) return;
+    $('admStatus').textContent = 'Reading ' + file.name + '…';
+    $('admStatus').className = 'upload-status';
+
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        var sheets = analyzeBook(wb);
+        if (!sheets.length || !sheets[0].dataRows) {
+          $('admStatus').textContent = 'No rows found in that file.';
+          $('admStatus').className = 'upload-status err';
+          $('admPanel').classList.add('hidden');
+          return;
+        }
+        imp = {
+          fileName: file.name, sheets: sheets, sheetIdx: 0,
+          headerIdx: sheets[0].headerIdx, map: {}, companyCol: null,
+          fallbackName: file.name.replace(/\.[^.]+$/, '')
+        };
+        var guess = impAutoMap();
+        imp.map = guess.map;
+        imp.companyCol = guess.companyCol;
+
+        $('admStatus').textContent =
+          'Read ' + file.name + ' — sheet "' + sheets[0].name + '", headers on row ' + (sheets[0].headerIdx + 1) + '.';
+        $('admStatus').className = 'upload-status ok';
+        renderImportPanel();
+      } catch (err) {
+        if (window.console) console.error('admin import parse failed', err);
+        $('admStatus').textContent = 'Could not read that file.';
+        $('admStatus').className = 'upload-status err';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  // Companies go in one at a time so a failure names the company it failed
+  // on and everything before it is already saved.
+  function runImport() {
+    var groups = imp.groups || [];
+    if (!groups.length) return;
+
+    $('admConfirm').disabled = true;
+    $('admCancel').disabled = true;
+    $('admProgress').classList.remove('hidden');
+
+    var done = 0, failed = [];
+
+    function step(i) {
+      if (i >= groups.length) {
+        $('admProgressText').textContent =
+          'Imported ' + done + ' of ' + groups.length + ' companies' +
+          (failed.length ? ' · ' + failed.length + ' failed' : '');
+        $('admCancel').disabled = false;
+        toast(failed.length
+          ? done + ' imported, ' + failed.length + ' failed: ' + failed[0]
+          : done + ' companies imported', failed.length > 0);
+        mState.all = null;
+        reload();
+        if (state.view === 'machines') loadAllEquipment();
+        if (!failed.length) setTimeout(closeImport, 1200);
+        return;
+      }
+
+      var g = groups[i];
+      $('admBarFill').style.width = Math.round(i / groups.length * 100) + '%';
+      $('admProgressText').textContent = 'Importing ' + (i + 1) + ' of ' + groups.length + ' — ' + g.name;
+
+      client.rpc('import_master_company', {
+        payload: {
+          language: 'es',
+          company: { name: g.name, sourceFile: imp.fileName },
+          equipment: g.items
+        }
+      }).then(function (res) {
+        if (res.error) failed.push(g.name + ': ' + res.error.message);
+        else done++;
+        step(i + 1);
+      });
+    }
+    step(0);
+  }
+
+  function openImport() {
+    $('importModal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeImport() {
+    $('importModal').classList.add('hidden');
+    document.body.style.overflow = '';
+    imp = null;
+    $('admPanel').classList.add('hidden');
+    $('admProgress').classList.add('hidden');
+    $('admBarFill').style.width = '0%';
+    $('admStatus').textContent = '';
+    $('admCount').textContent = '';
+    $('admFile').value = '';
+    $('admConfirm').disabled = true;
+    $('admCancel').disabled = false;
+  }
+
+  function wireImport() {
+    $('importOpenBtn').addEventListener('click', openImport);
+    $('importClose').addEventListener('click', closeImport);
+    $('admCancel').addEventListener('click', closeImport);
+    $('admConfirm').addEventListener('click', runImport);
+
+    $('admBrowse').addEventListener('click', function () { $('admFile').click(); });
+    $('admFile').addEventListener('change', function (e) { handleImportFile(e.target.files); });
+
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      $('admDrop').addEventListener(ev, function (e) { e.preventDefault(); $('admDrop').classList.add('dragover'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      $('admDrop').addEventListener(ev, function (e) { e.preventDefault(); $('admDrop').classList.remove('dragover'); });
+    });
+    $('admDrop').addEventListener('drop', function (e) {
+      if (e.dataTransfer && e.dataTransfer.files) handleImportFile(e.dataTransfer.files);
+    });
+
+    $('admSheet').addEventListener('change', function (e) {
+      imp.sheetIdx = Number(e.target.value);
+      imp.headerIdx = impSheet().headerIdx;
+      var g = impAutoMap();
+      imp.map = g.map; imp.companyCol = g.companyCol;
+      renderImportPanel();
+    });
+
+    $('admHeaderRow').addEventListener('change', function (e) {
+      imp.headerIdx = Number(e.target.value);
+      var g = impAutoMap();
+      imp.map = g.map; imp.companyCol = g.companyCol;
+      renderImportPanel();
+    });
+
+    $('admCompanyCol').addEventListener('change', function (e) {
+      imp.companyCol = e.target.value === '' ? null : Number(e.target.value);
+      // A column used for company names must not also feed a machine field.
+      Object.keys(imp.map).forEach(function (k) {
+        if (imp.map[k] === imp.companyCol) imp.map[k] = null;
+      });
+      renderImportPanel();
+    });
+
+    $('admMap').addEventListener('change', function (e) {
+      var sel = e.target.closest('select[data-impfield]');
+      if (!sel) return;
+      var field = sel.getAttribute('data-impfield');
+      var val = sel.value === '' ? null : Number(sel.value);
+      if (val != null) {
+        Object.keys(imp.map).forEach(function (k) {
+          if (k !== field && imp.map[k] === val) imp.map[k] = null;
+        });
+        if (imp.companyCol === val) imp.companyCol = null;
+      }
+      imp.map[field] = val;
+      renderImportPanel();
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !$('importModal').classList.contains('hidden')) closeImport();
+    });
+  }
+
   /* -------------------------------------------------------
      Wiring
      ------------------------------------------------------- */
   function wireDashboard() {
     wireMachinesView();
+    wireImport();
     $('refreshBtn').addEventListener('click', function () {
       state.equipment = {};
       mState.all = null;              // force the machine set to reload too
