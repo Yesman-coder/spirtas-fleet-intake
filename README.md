@@ -258,35 +258,44 @@ they can fix it and submit again without retyping anything.
 
 ## Email when someone registers
 
-Off until you configure it.  adds a
+Off until you configure it. `supabase/007-email-notifications.sql` adds a
 database trigger that posts to [Resend](https://resend.com) whenever a
 company registers through the public form. It sends from Postgres itself,
 so there is no Edge Function to deploy and nothing to install locally.
 
-1. Run  in the SQL editor.
+1. Run `007-email-notifications.sql` in the SQL editor.
 2. Get a Resend API key (free tier: 3,000 emails a month), then edit and run
-   the  block at the bottom of that file
-   with your key and the addresses that should receive it.
+   the `update public.notify_settings` block at the bottom of that file with
+   your key and the addresses that should receive it.
 3. Test it without waiting for a real submission:
-   
-The key is held in , which has row-level security
-on and no policies at all, so it cannot be read through the API by anyone,
+   `select public.test_notification();`
+
+The key is held in `public.notify_settings`, which has row-level security on
+and no policies at all, so it cannot be read through the API by anyone,
 signed in or not. Only the trigger reads it.
 
 Two things worth knowing:
 
 - **A failed send can never lose a registration.** The trigger swallows its
-  own errors and records them in . If Resend is down,
-  the submission still saves.
-- **Bulk imports do not email.** The trigger only fires on ,
+  own errors and records them in `public.notify_log`. If Resend is down, the
+  submission still saves.
+- **Bulk imports do not email.** The trigger fires only on `source = 'web'`,
   so loading ten companies from a spreadsheet does not send ten emails.
 
 To check what happened:
 
-\
-Start on , which works immediately. For reliable
-delivery verify spirtasworldwide.com at resend.com/domains and switch
- to an address on it.
+```sql
+select sent_at, company_name, ok, detail
+from public.notify_log order by sent_at desc limit 10;
+
+-- what Resend replied (200 = accepted)
+select id, status_code, content
+from net._http_response order by id desc limit 5;
+```
+
+Start on `onboarding@resend.dev`, which works immediately with no setup. For
+reliable delivery, verify spirtasworldwide.com at resend.com/domains and
+change `from_email` to an address on it.
 
 ## Limits worth knowing
 
