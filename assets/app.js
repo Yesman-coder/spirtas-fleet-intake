@@ -89,18 +89,92 @@ function setLanguage(lang) {
    Equipment table
    --------------------------------------------------------- */
 function rowTemplate(row, idx) {
+  // Placeholders are a hint for an empty row someone is about to type into.
+  // On an imported row they read as demands: 577 machines with no price
+  // column turns into 577 cells whispering "$450 / day". A row that already
+  // carries data gets none.
+  var isBlank = !hasAnyValue(row);
   var cells = EQ_COLS.map(function (key) {
-    var ph = t(PLACEHOLDER_KEY[key]);
+    var ph = isBlank ? escAttr(t(PLACEHOLDER_KEY[key])) : '';
     return '<td><input type="text" data-idx="' + idx + '" data-key="' + key +
-      '" value="' + escAttr(row[key]) + '" placeholder="' + escAttr(ph) + '"></td>';
+      '" value="' + escAttr(row[key]) + '" placeholder="' + ph + '"></td>';
   }).join('');
   return '<tr>' + cells +
     '<td class="col-action"><button type="button" class="del-row-btn" data-idx="' + idx +
     '" aria-label="Delete row">&times;</button></td></tr>';
 }
 
+/* A long imported list does not want to be 577 rows of editable inputs: it is
+   slow, and it looks like a form demanding to be filled in. Show what arrived,
+   say it is ready, and keep editing one click away. */
+var COMPACT_THRESHOLD = 40;
+var COMPACT_PREVIEW = 8;
+var forceFullTable = false;
+
+function compactHtml() {
+  var n = state.equipment.length;
+  var filled = {};
+  EQ_COLS.forEach(function (k) {
+    filled[k] = state.equipment.filter(function (r) { return r[k] && String(r[k]).trim(); }).length;
+  });
+  var present = EQ_COLS.filter(function (k) { return filled[k] > 0; });
+  var missing = EQ_COLS.filter(function (k) { return filled[k] === 0; });
+
+  var head = present.map(function (k) { return '<th>' + escAttr(colLabel(k)) + '</th>'; }).join('');
+  var body = state.equipment.slice(0, COMPACT_PREVIEW).map(function (r) {
+    return '<tr>' + present.map(function (k) {
+      return '<td>' + escAttr(String(r[k] || '').slice(0, 30)) + '</td>';
+    }).join('') + '</tr>';
+  }).join('');
+
+  return '' +
+    '<div class="compact-head">' +
+      '<p class="compact-count"><strong>' + n + '</strong> ' + t('compactReady') + '</p>' +
+      '<button type="button" class="btn btn-sm" id="expandTableBtn">' + t('compactEdit') + '</button>' +
+    '</div>' +
+    '<div class="compact-scroll"><table class="compact-table">' +
+      '<thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody>' +
+    '</table></div>' +
+    (n > COMPACT_PREVIEW
+      ? '<p class="compact-more">' + t('compactMore').replace('{n}', n - COMPACT_PREVIEW) + '</p>'
+      : '') +
+    (missing.length
+      ? '<p class="compact-missing">' + t('compactMissing').replace('{cols}',
+          missing.map(colLabel).join(', ')) + '</p>'
+      : '');
+}
+
+function colLabel(key) {
+  var map = {
+    brand: 'colBrand', type: 'colType', model: 'colModel', unitId: 'colId',
+    capacity: 'colCapacity', age: 'colAge', location: 'colLocation',
+    price: 'colPrice', contact: 'colContact'
+  };
+  return t(map[key]) || key;
+}
+
 function renderEquipmentTable() {
   var tbody = document.getElementById('eqBody');
+  var compact = document.getElementById('compactView');
+  var tableWrap = document.querySelector('.eq-table-wrap');
+  var big = state.equipment.length > COMPACT_THRESHOLD && !forceFullTable;
+
+  if (compact) {
+    compact.classList.toggle('hidden', !big);
+    if (tableWrap) tableWrap.classList.toggle('hidden', big);
+    if (big) {
+      compact.innerHTML = compactHtml();
+      var btn = document.getElementById('expandTableBtn');
+      if (btn) btn.addEventListener('click', function () {
+        forceFullTable = true;
+        renderEquipmentTable();
+      });
+      updateEqCount();
+      updateSteps();
+      return;   // the editable table stays unrendered, which is the point
+    }
+  }
+
   if (!state.equipment.length) {
     tbody.innerHTML = '<tr><td colspan="10" class="eq-empty">' + t('eqEmpty') + '</td></tr>';
   } else {

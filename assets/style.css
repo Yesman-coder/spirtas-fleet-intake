@@ -435,3 +435,57 @@ footer.site-foot {
   .import-map { grid-template-columns: 1fr 1fr; gap: 8px; }
   .import-actions .btn { flex: 1; justify-content: center; }
 }
+
+/* ---------- Compact list view ----------
+   Replaces the editable table for a long import: shows what arrived and
+   says it is ready, instead of hundreds of inputs that read as demands. */
+.compact-view {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  padding: 16px 18px;
+  margin-bottom: 8px;
+}
+.compact-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.compact-count { margin: 0; font-size: 14.5px; color: var(--ink); }
+.compact-count strong {
+  font-family: var(--font-display);
+  font-size: 24px;
+  color: var(--brand-green-dark);
+  margin-right: 4px;
+}
+.compact-scroll { overflow-x: auto; background: var(--surface); border-radius: 9px; }
+.compact-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.compact-table th {
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.compact-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.compact-table tr:last-child td { border-bottom: none; }
+.compact-more { margin: 9px 0 0; font-size: 12.5px; color: var(--muted); }
+.compact-missing {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  padding: 9px 11px;
+  background: var(--brand-green-tint);
+  border-radius: 8px;
+}
