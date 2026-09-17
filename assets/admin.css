@@ -523,3 +523,72 @@ tr.row-detail > td { padding: 0; background: var(--surface-2); border-bottom: 1p
   .modal-foot { padding: 12px 16px; flex-wrap: wrap; }
   .modal-foot .btn { flex: 1; justify-content: center; }
 }
+
+/* ---------- Answer bar ----------
+   The hero number for "how many X do we have?". The value is the mark, so
+   there is no chart here: one large figure, its label, and who has them. */
+.answer-bar {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--brand-green);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 14px;
+}
+.answer-main { display: flex; align-items: baseline; gap: 8px; }
+.answer-num {
+  font-family: var(--font-display);
+  font-size: clamp(42px, 6vw, 60px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--brand-green-dark);
+}
+.answer-unit {
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.answer-meta { flex: 1 1 200px; min-width: 0; }
+.answer-what {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.answer-sub { margin: 3px 0 0; font-size: 13px; color: var(--muted); }
+
+.answer-by { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.answer-chip {
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 5px 11px;
+  white-space: nowrap;
+}
+.answer-chip b {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin-right: 3px;
+}
+.answer-chip.muted { opacity: .7; }
+
+@media (max-width: 720px) {
+  .answer-bar { gap: 14px; padding: 14px 16px; }
+  .answer-num { font-size: 40px; }
+  .answer-what { font-size: 16px; }
+  .answer-by { justify-content: flex-start; }
+}

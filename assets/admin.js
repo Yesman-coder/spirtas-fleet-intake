@@ -850,10 +850,10 @@
     $('mEmpty').classList.toggle('hidden', any);
     $('mMore').classList.toggle('hidden', mState.shown >= mState.filtered.length);
 
-    var units = mState.filtered.reduce(function (n, r) { return n + (r.qty || 1); }, 0);
-    $('mNote').textContent = any
-      ? 'Showing ' + fmtNum(mState.shown) + ' of ' + fmtNum(mState.filtered.length) +
-        ' machine rows (' + fmtNum(units) + ' units) from ' + fmtNum(mState.all.length) + ' total'
+    renderAnswer();
+
+    $('mNote').textContent = any && mState.shown < mState.filtered.length
+      ? 'Showing the first ' + fmtNum(mState.shown) + ' rows below'
       : '';
 
     var ths = document.querySelectorAll('.machines-table th.sortable');
@@ -862,6 +862,50 @@
       if (key === mState.sortKey) ths[i].setAttribute('aria-sort', mState.sortAsc ? 'ascending' : 'descending');
       else ths[i].removeAttribute('aria-sort');
     }
+  }
+
+  /* The headline answer. "How many excavators do we have?" should be one
+     number, large, without reading a sentence to find it. Units rather than
+     rows, because a row that says qty 6 is six machines. */
+  function renderAnswer() {
+    var rows = mState.filtered;
+    var units = rows.reduce(function (n, r) { return n + (r.qty || 1); }, 0);
+
+    $('mAnswerNum').textContent = fmtNum(units);
+    $('mAnswerUnit').textContent = units === 1 ? 'unit' : 'units';
+
+    // Say what was asked, in the words of the filters that are set.
+    var bits = [];
+    if (mState.family)  bits.push(mState.family);
+    if (mState.brand)   bits.push(mState.brand);
+    if (mState.year)    bits.push(mState.year);
+    if (mState.search)  bits.push('“' + mState.search + '”');
+    var what = bits.length ? bits.join(' · ') : 'All machines';
+    if (mState.company) what += (bits.length ? ' — ' : '') + mState.company;
+    $('mAnswerWhat').textContent = what;
+
+    var companies = {};
+    rows.forEach(function (r) {
+      companies[r.company_name] = (companies[r.company_name] || 0) + (r.qty || 1);
+    });
+    var names = Object.keys(companies);
+
+    $('mAnswerSub').textContent = rows.length
+      ? fmtNum(rows.length) + (rows.length === 1 ? ' listing' : ' listings') +
+        ' across ' + names.length + (names.length === 1 ? ' company' : ' companies')
+      : 'Nothing matches these filters';
+
+    // Who actually has them — the question that always comes next.
+    var top = names.map(function (n) { return { n: n, v: companies[n] }; })
+      .sort(function (a, b) { return b.v - a.v; })
+      .slice(0, 6);
+    $('mAnswerBy').innerHTML = top.length > 1
+      ? top.map(function (c) {
+          return '<span class="answer-chip"><b>' + fmtNum(c.v) + '</b> ' +
+            esc(c.n.length > 26 ? c.n.slice(0, 24) + '…' : c.n) + '</span>';
+        }).join('') +
+        (names.length > 6 ? '<span class="answer-chip muted">+' + (names.length - 6) + ' more</span>' : '')
+      : '';
   }
 
   function setView(view) {
