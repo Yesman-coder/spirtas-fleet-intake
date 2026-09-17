@@ -28,7 +28,7 @@ var I18N = {
     tabManual: 'Add manually',
     tabUpload: 'Upload a file',
     dropTitle: 'Drop your file here',
-    dropSub: 'CSV or Excel — whatever format your list is already in. We will read it and show you what we found before adding anything.',
+    dropSub: 'Excel or CSV only (.xlsx, .xls, .csv) — in whatever layout your list already has. We will read it and show you what we found before adding anything.',
 
     scopeTitle: 'What we are looking for',
     scopeBody: 'We are looking for <strong>demolition and construction machinery and equipment</strong> to take part in the La Guaira works. Other classes of equipment will not be registered in our database.',
@@ -46,6 +46,9 @@ var I18N = {
     compactEdit: 'Edit rows',
     compactMore: '…and {n} more, all included.',
     compactMissing: 'Your file had nothing for: {cols}. That is fine — send it as is and we will fill the gaps with you.',
+
+    fileUnsupported: 'We cannot read {format} files. Please send your list as Excel (.xlsx, .xls) or CSV. If your list only exists as {format}, contact Spirtas Worldwide directly and we will enter it for you.',
+    fileNoExt: 'We could not tell what kind of file that is. Please upload Excel (.xlsx, .xls) or CSV.',
 
     importReading: 'Reading your file…',
     importFound: 'Read {file} — using the sheet "{sheet}", headers on row {row}.',
@@ -131,7 +134,7 @@ var I18N = {
     tabManual: 'Agregar manualmente',
     tabUpload: 'Subir un archivo',
     dropTitle: 'Arrastre su archivo aquí',
-    dropSub: 'CSV o Excel — en el formato que ya tenga su lista. La leeremos y le mostraremos lo que encontramos antes de agregar nada.',
+    dropSub: 'Solo Excel o CSV (.xlsx, .xls, .csv) — con la estructura que ya tenga su lista. La leeremos y le mostraremos lo que encontramos antes de agregar nada.',
 
     scopeTitle: 'Qué estamos buscando',
     scopeBody: 'Estamos buscando <strong>maquinaria y equipo para demolición y construcción</strong> para participar en los trabajos de La Guaira. Otra clase de equipos no serán registrados en nuestra base de datos.',
@@ -149,6 +152,9 @@ var I18N = {
     compactEdit: 'Editar filas',
     compactMore: '…y {n} más, todas incluidas.',
     compactMissing: 'Su archivo no traía: {cols}. No hay problema — envíelo así y completamos lo que falte con usted.',
+
+    fileUnsupported: 'No podemos leer archivos {format}. Envíe su lista en Excel (.xlsx, .xls) o CSV. Si su lista solo existe en {format}, contacte directamente a Spirtas Worldwide y la cargamos por usted.',
+    fileNoExt: 'No pudimos identificar qué tipo de archivo es. Suba Excel (.xlsx, .xls) o CSV.',
 
     importReading: 'Leyendo su archivo…',
     importFound: 'Leímos {file} — usando la hoja "{sheet}", encabezados en la fila {row}.',

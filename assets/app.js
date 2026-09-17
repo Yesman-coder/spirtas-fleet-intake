@@ -448,9 +448,46 @@ function renderImportPreview() {
     t('importWillAdd').replace('{n}', rows.length);
 }
 
+/* The file picker's accept list only filters the picker. Drag and drop ignores
+   it completely, and some pickers let you switch to "All files", so an
+   unsupported file reaches us either way. Naming the format they actually
+   dropped beats a generic "could not read that file". */
+var SUPPORTED_EXT = ['csv', 'xlsx', 'xls', 'xlsm', 'xlsb', 'ods', 'tsv', 'txt'];
+
+var FORMAT_NAMES = {
+  pdf: 'PDF', doc: 'Word', docx: 'Word', rtf: 'Word', odt: 'Word',
+  jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', heic: 'image',
+  webp: 'image', bmp: 'image', tif: 'image', tiff: 'image',
+  ppt: 'PowerPoint', pptx: 'PowerPoint',
+  zip: 'ZIP', rar: 'RAR', '7z': '7-Zip',
+  msg: 'email', eml: 'email', pages: 'Pages', numbers: 'Numbers'
+};
+
+function fileExtension(name) {
+  var m = String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/);
+  return m ? m[1] : '';
+}
+
+function rejectUnsupported(file) {
+  var ext = fileExtension(file.name);
+  if (!ext) {
+    setUploadStatus(t('fileNoExt'), 'err');
+    return true;
+  }
+  if (SUPPORTED_EXT.indexOf(ext) !== -1) return false;
+
+  var friendly = FORMAT_NAMES[ext] || ('.' + ext);
+  // The placeholder appears more than once, so replace every occurrence.
+  setUploadStatus(t('fileUnsupported').split('{format}').join(friendly), 'err');
+  document.getElementById('importPanel').classList.add('hidden');
+  document.getElementById('fileInput').value = '';
+  return true;
+}
+
 function handleFiles(fileList) {
   var file = fileList && fileList[0];
   if (!file) return;
+  if (rejectUnsupported(file)) return;
   setUploadStatus(t('importReading'), '');
 
   var reader = new FileReader();

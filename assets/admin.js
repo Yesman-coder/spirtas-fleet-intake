@@ -1558,9 +1558,33 @@
       (groups.length === 1 ? 'registration' : 'registrations');
   }
 
+  // Same guard as the public form: drag and drop ignores the picker's accept
+  // list, so an unsupported file arrives either way and should say so.
+  var ADMIN_SUPPORTED = ['csv', 'xlsx', 'xls', 'xlsm', 'xlsb', 'ods', 'tsv', 'txt'];
+  var ADMIN_FORMATS = {
+    pdf: 'PDF', doc: 'Word', docx: 'Word', rtf: 'Word', odt: 'Word',
+    jpg: 'image', jpeg: 'image', png: 'image', heic: 'image', tif: 'image', tiff: 'image',
+    ppt: 'PowerPoint', pptx: 'PowerPoint', zip: 'ZIP', rar: 'RAR',
+    msg: 'email', eml: 'email', pages: 'Pages', numbers: 'Numbers'
+  };
+
   function handleImportFile(fileList) {
     var file = fileList && fileList[0];
     if (!file) return;
+
+    var m = String(file.name || '').toLowerCase().match(/\.([a-z0-9]+)$/);
+    var ext = m ? m[1] : '';
+    if (!ext || ADMIN_SUPPORTED.indexOf(ext) === -1) {
+      var friendly = ADMIN_FORMATS[ext] || (ext ? '.' + ext : 'that kind of');
+      $('admStatus').textContent =
+        'Cannot read ' + friendly + ' files. Upload Excel (.xlsx, .xls) or CSV.';
+      $('admStatus').className = 'upload-status err';
+      $('admPanel').classList.add('hidden');
+      $('admFile').value = '';
+      $('admConfirm').disabled = true;
+      return;
+    }
+
     $('admStatus').textContent = 'Reading ' + file.name + '…';
     $('admStatus').className = 'upload-status';
 
