@@ -20,8 +20,8 @@
    ========================================================= */
 
 window.SUPABASE_CONFIG = {
-  url: 'PASTE_YOUR_SUPABASE_PROJECT_URL_HERE',
-  anonKey: 'PASTE_YOUR_SUPABASE_ANON_PUBLIC_KEY_HERE'
+  url: 'https://aerxypwvaqlrnvikwmhr.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcnh5cHd2YXFscm52aWt3bWhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2NDIzNzAsImV4cCI6MjEwNTIxODM3MH0.OZ01E2dkkpm7QUXuc1Qs6IXR0UIDraP3ienSGSAO_LI'
 };
 
 window.SUPABASE_CONFIG.isConfigured = function () {

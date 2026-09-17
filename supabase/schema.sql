@@ -282,7 +282,14 @@ $fn$;
 comment on function public.fleet_intake_stats() is
   'Headline counts for the admin dashboard. Respects row-level security.';
 
+-- Supabase's default privileges hand EXECUTE on every new function in this
+-- schema to anon as well, and revoking from PUBLIC does not touch that
+-- separate grant — so anon has to be named explicitly. Nothing leaks either
+-- way (the function is security invoker, so RLS returns zeroes to a
+-- non-admin), but the dashboard's numbers are not the anonymous page's
+-- business.
 revoke all on function public.fleet_intake_stats() from public;
+revoke all on function public.fleet_intake_stats() from anon;
 grant execute on function public.fleet_intake_stats() to authenticated;
 
 -- ---------------------------------------------------------
