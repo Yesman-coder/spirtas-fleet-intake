@@ -89,12 +89,39 @@
           <p><strong data-i18n="dropTitle">Drop your file here</strong></p>
           <p data-i18n="dropSub">CSV or Excel (.csv, .xlsx, .xls) — column headers in English or Spanish are both fine.</p>
           <button type="button" class="btn" id="browseBtn" data-i18n="browseBtn">Choose file</button>
-          <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" class="hidden">
+          <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.xlsm" class="hidden">
           <p class="upload-status" id="uploadStatus"></p>
+        </div>
+
+        <!-- Shown after a file is read: what we think it contains, editable. -->
+        <div class="import-panel hidden" id="importPanel">
+          <h3 data-i18n="importTitle">Check what we found</h3>
+          <p class="import-lede" data-i18n="importLede">We read your file and guessed which column is which. Fix anything that looks wrong, then add the rows.</p>
+
+          <div class="import-controls">
+            <label class="import-ctl hidden" id="importSheetWrap">
+              <span data-i18n="importSheetLabel">Sheet</span>
+              <select id="importSheet"></select>
+            </label>
+            <label class="import-ctl">
+              <span data-i18n="importHeaderLabel">Header row</span>
+              <select id="importHeaderRow"></select>
+            </label>
+          </div>
+
+          <div class="import-map" id="importMap"></div>
+
+          <div class="import-preview" id="importPreview"></div>
+
+          <div class="import-actions">
+            <span class="import-count" id="importCount"></span>
+            <button type="button" class="btn btn-ghost" id="importCancel" data-i18n="importCancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="importConfirm" data-i18n="importConfirm">Add these rows</button>
+          </div>
         </div>
       </div>
 
-      <div class="table-wrap">
+      <div class="table-wrap eq-table-wrap">
         <table class="eq-table">
           <thead>
             <tr>

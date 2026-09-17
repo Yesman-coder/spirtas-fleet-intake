@@ -175,6 +175,53 @@ emails asking about `A1B2C3D4`, paste that into the search box.
   `HEADER_ALIASES` in `assets/i18n.js` so uploaded spreadsheets with
   that column still auto-match.
 
+## Accepting whatever a company sends
+
+Companies send the list they already keep, not the list we asked for. In
+practice that means a title row and a division row above the headers,
+several sheets where the first one is a summary with no equipment in it,
+and column names nobody agreed on (`DESCRIPCION`, `PLACA / SERIAL`,
+`ESTATUS`, `N°`).
+
+So the upload does not assume anything:
+
+1. **Every sheet is read**, not just the first. Each one is scored on how
+   many recognisable columns it has and how many data rows follow, and the
+   best is preselected. A "Dashboard Resumen" summary sheet loses to the
+   real inventory sheet behind it.
+2. **The header row is found**, not assumed to be row 1. The first 25 rows
+   are scanned and the one that looks most like headers wins.
+3. **The guess is shown, not applied.** A review panel appears with the
+   chosen sheet, the header row, and a dropdown per field. Anything wrong
+   gets corrected there, with a live three-row preview, before a single row
+   is added.
+4. **Unrecognised columns are kept**, not dropped. They ride along in
+   `equipment.extras` as `{"COLUMN NAME": "value"}`, so a column nobody
+   anticipated is still there when you clean the data up later.
+
+Nothing has to be right at submission time. Collect first, clean after.
+
+### Cleaning up later
+
+See which unmapped columns keep turning up:
+
+```sql
+select k as column_name, count(*) as rows
+from public.equipment e, lateral jsonb_object_keys(e.extras) k
+where e.extras is not null
+group by 1 order by 2 desc;
+```
+
+If one appears often, add its spelling to `HEADER_ALIASES` in
+`assets/i18n.js` and it maps automatically from then on. To promote values
+already collected into a real field:
+
+```sql
+update public.equipment
+   set unit_id = extras ->> 'SERIAL'
+ where unit_id is null and extras ? 'SERIAL';
+```
+
 ## How file uploads are matched
 
 When someone uploads a CSV/XLSX, the first row is read as headers and

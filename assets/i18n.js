@@ -28,7 +28,26 @@ var I18N = {
     tabManual: 'Add manually',
     tabUpload: 'Upload a file',
     dropTitle: 'Drop your file here',
-    dropSub: 'CSV or Excel (.csv, .xlsx, .xls) — column headers in English or Spanish are both fine.',
+    dropSub: 'CSV or Excel — whatever format your list is already in. We will read it and show you what we found before adding anything.',
+
+    importReading: 'Reading your file…',
+    importFound: 'Read {file} — using the sheet "{sheet}", headers on row {row}.',
+    importEmpty: 'We could not find any rows in that file. Try another sheet or another file.',
+    importFailed: 'We could not read that file. Please check it opens in Excel, then try again.',
+    importTitle: 'Check what we found',
+    importLede: 'We read your file and guessed which column is which. Fix anything that looks wrong, then add the rows.',
+    importSheetLabel: 'Sheet',
+    importHeaderLabel: 'Header row',
+    importRowWord: 'Row',
+    importRowsWord: 'rows',
+    importIgnore: '— not in my file —',
+    importWillAdd: '{n} rows ready to add',
+    importNoRows: 'Nothing to add with these settings. Try a different sheet or header row.',
+    importExtraKept: 'Extra columns kept with each row: {cols}',
+    importCancel: 'Cancel',
+    importConfirm: 'Add these rows',
+    importDone: '{n} rows added below — review them and submit when ready.',
+    importBigList: 'That is a long list, so the table may feel slow. You can still submit it.',
     browseBtn: 'Choose file',
     addRow: 'Add row',
     colBrand: 'Brand',
@@ -95,7 +114,26 @@ var I18N = {
     tabManual: 'Agregar manualmente',
     tabUpload: 'Subir un archivo',
     dropTitle: 'Arrastre su archivo aquí',
-    dropSub: 'CSV o Excel (.csv, .xlsx, .xls) — encabezados de columna en inglés o español, ambos funcionan.',
+    dropSub: 'CSV o Excel — en el formato que ya tenga su lista. La leeremos y le mostraremos lo que encontramos antes de agregar nada.',
+
+    importReading: 'Leyendo su archivo…',
+    importFound: 'Leímos {file} — usando la hoja "{sheet}", encabezados en la fila {row}.',
+    importEmpty: 'No encontramos filas en ese archivo. Pruebe con otra hoja u otro archivo.',
+    importFailed: 'No pudimos leer ese archivo. Verifique que abra en Excel e inténtelo de nuevo.',
+    importTitle: 'Revise lo que encontramos',
+    importLede: 'Leímos su archivo y adivinamos qué columna es cuál. Corrija lo que esté mal y luego agregue las filas.',
+    importSheetLabel: 'Hoja',
+    importHeaderLabel: 'Fila de encabezados',
+    importRowWord: 'Fila',
+    importRowsWord: 'filas',
+    importIgnore: '— no está en mi archivo —',
+    importWillAdd: '{n} filas listas para agregar',
+    importNoRows: 'No hay nada que agregar con esta configuración. Pruebe otra hoja o fila de encabezados.',
+    importExtraKept: 'Columnas adicionales conservadas en cada fila: {cols}',
+    importCancel: 'Cancelar',
+    importConfirm: 'Agregar estas filas',
+    importDone: '{n} filas agregadas abajo — revíselas y envíe cuando esté listo.',
+    importBigList: 'Es una lista larga, la tabla puede tardar en responder. Puede enviarla igualmente.',
     browseBtn: 'Elegir archivo',
     addRow: 'Agregar fila',
     colBrand: 'Marca',
@@ -142,14 +180,41 @@ var I18N = {
 
 /* Header aliases used to auto-match uploaded spreadsheet columns,
    regardless of language, accents or capitalization. */
+/* Column names we recognise, normalised (lowercase, no accents, no
+   punctuation — see normalizeHeader). Order matters: the first field whose
+   alias list contains a header wins, so the more specific fields are listed
+   before the ones whose names are prefixes of others.
+
+   These come from the files companies have actually sent, not from a
+   standard. Anything not listed here is still imported — it is kept as an
+   extra column and shown in the mapping panel so it can be assigned by
+   hand. Add new spellings here as you meet them. */
 var HEADER_ALIASES = {
-  brand: ['brand', 'marca'],
-  type: ['type', 'tipo'],
-  model: ['model', 'modelo'],
-  unitId: ['id', 'unitid', 'unit id', 'identificador', 'identificacion'],
-  capacity: ['capacity', 'capacidad'],
-  age: ['age', 'antiguedad', 'edad', 'anio', 'ano'],
-  location: ['location', 'ubicacion'],
-  price: ['priceday', 'preciodia', 'price', 'precio', 'dayrate', 'pricedayrate', 'preciopordia', 'priceperday'],
-  contact: ['contact', 'contacto']
+  // Specific compounds first: "PRECIO POR DIA" must not be claimed by `price`
+  // before `priceperday` gets a look, and "MODELO / MARCA" must not be read
+  // as a model when the column really holds both.
+  price: [
+    'priceday', 'preciodia', 'dayrate', 'pricedayrate', 'preciopordia', 'priceperday',
+    'price', 'precio', 'tarifa', 'costo', 'valor', 'alquiler', 'renta', 'preciodiario'
+  ],
+  capacity: ['capacity', 'capacidad', 'cap', 'tonelaje', 'tonelada', 'toneladas', 'potencia', 'kva', 'hp'],
+  unitId: [
+    'id', 'unitid', 'identificador', 'identificacion', 'serial', 'nroserial', 'numeroserial',
+    'placa', 'placaserial', 'codigo', 'cod', 'chasis', 'vin', 'matricula', 'activo',
+    'nroactivo', 'item', 'no', 'n', 'nro', 'numero', 'ref', 'referencia'
+  ],
+  brand: ['brand', 'marca', 'fabricante', 'manufacturer', 'make'],
+  model: ['model', 'modelo', 'modelomarca', 'marcamodelo'],
+  type: [
+    'type', 'tipo', 'descripcion', 'description', 'desc', 'equipo', 'equipment',
+    'maquina', 'maquinaria', 'categoria', 'category', 'clasificacion', 'classification',
+    'tipodescripcion', 'descripciontipo', 'familia', 'family', 'subtipo', 'denominacion',
+    'articulo', 'bien', 'unidad'
+  ],
+  age: ['age', 'antiguedad', 'edad', 'anio', 'ano', 'year', 'anofabricacion', 'anomodelo', 'fabricacion'],
+  location: [
+    'location', 'ubicacion', 'sede', 'base', 'zona', 'sitio', 'lugar', 'ciudad',
+    'estado', 'region', 'almacen', 'patio', 'obra'
+  ],
+  contact: ['contact', 'contacto', 'responsable', 'encargado', 'telefono', 'email', 'correo', 'celular']
 };

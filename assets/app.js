@@ -126,6 +126,17 @@ function addRow() {
 
 /* ---------------------------------------------------------
    File import (CSV / XLSX / XLS) via SheetJS
+
+   Real files from real companies do not arrive in our shape. They
+   have a title row and a division row above the headers, several
+   sheets where the first one is a summary with no equipment in it,
+   and column names nobody agreed on. So instead of assuming, this
+   reads every sheet, works out where each one's header row is,
+   scores them, picks the most likely, and then SHOWS that guess as
+   an editable mapping the person can correct before importing.
+
+   Anything we cannot map is kept as an extra column rather than
+   dropped, so cleaning up later is possible.
    --------------------------------------------------------- */
 function normalizeHeader(s) {
   return String(s || '')
@@ -135,10 +146,10 @@ function normalizeHeader(s) {
     .replace(/[^a-z0-9]/g, '');
 }
 
-/* A single header cell often carries both languages ("BRAND / MARCA") or
-   trails a unit ("PRICE PER DAY (24 HR) USD"). normalizeHeader collapses
-   those to one token, so try the whole thing first, then each side of the
-   separator, then the same again with a trailing currency dropped. */
+/* A single header cell often carries two labels ("MODELO / MARCA",
+   "TIPO / DESCRIPCIÓN") or trails a unit ("PRICE PER DAY (24 HR) USD").
+   Try the whole thing, then each side of the separator, then again with a
+   trailing currency dropped. */
 function headerCandidates(h) {
   var out = [];
   function push(v) { if (v && out.indexOf(v) === -1) out.push(v); }
@@ -148,20 +159,75 @@ function headerCandidates(h) {
   return out;
 }
 
-function mapHeaders(headerRow) {
-  var map = {};
-  headerRow.forEach(function (h, idx) {
-    var cands = headerCandidates(h);
-    Object.keys(HEADER_ALIASES).forEach(function (key) {
-      if (map[key] != null) return;
-      var aliases = HEADER_ALIASES[key];
-      for (var i = 0; i < aliases.length; i++) {
-        if (cands.indexOf(aliases[i]) !== -1) { map[key] = idx; break; }
-      }
+function matchField(header) {
+  var cands = headerCandidates(header);
+  var keys = Object.keys(HEADER_ALIASES);
+  for (var k = 0; k < keys.length; k++) {
+    var aliases = HEADER_ALIASES[keys[k]];
+    for (var i = 0; i < aliases.length; i++) {
+      if (cands.indexOf(aliases[i]) !== -1) return keys[k];
+    }
+  }
+  return null;
+}
+
+/* Score a candidate header row: how many of our fields it matches, and how
+   many non-empty cells it has. A title row like ["ACME S.A.", "", "", ""]
+   scores 0 and loses to the real header row further down. */
+function scoreHeaderRow(row) {
+  if (!row) return { hits: 0, filled: 0, score: -1 };
+  var filled = 0, hits = 0, seen = {};
+  for (var i = 0; i < row.length; i++) {
+    var cell = String(row[i] == null ? '' : row[i]).trim();
+    if (!cell) continue;
+    filled++;
+    var f = matchField(cell);
+    if (f && !seen[f]) { seen[f] = 1; hits++; }
+  }
+  return { hits: hits, filled: filled, score: hits * 10 + Math.min(filled, 12) };
+}
+
+function countDataRows(rows, headerIdx) {
+  var n = 0;
+  for (var i = headerIdx + 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (r && r.some(function (c) { return String(c == null ? '' : c).trim(); })) n++;
+  }
+  return n;
+}
+
+/* Look at every sheet, find its best header row, and rank them. */
+function analyzeWorkbook(wb) {
+  var HEADER_SCAN_DEPTH = 25;
+  var sheets = [];
+  wb.SheetNames.forEach(function (name) {
+    var rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: '' });
+    if (!rows.length) return;
+    var best = { idx: 0, score: -1, hits: 0 };
+    var depth = Math.min(HEADER_SCAN_DEPTH, rows.length);
+    for (var i = 0; i < depth; i++) {
+      var s = scoreHeaderRow(rows[i]);
+      if (s.score > best.score) best = { idx: i, score: s.score, hits: s.hits };
+    }
+    var dataRows = countDataRows(rows, best.idx);
+    sheets.push({
+      name: name,
+      rows: rows,
+      headerIdx: best.idx,
+      hits: best.hits,
+      dataRows: dataRows,
+      // A sheet only wins on volume once it has proven it has real headers.
+      score: best.hits * 1000 + Math.min(dataRows, 999)
     });
   });
-  return map;
+  sheets.sort(function (a, b) { return b.score - a.score; });
+  return sheets;
 }
+
+/* ---------------------------------------------------------
+   Import review panel
+   --------------------------------------------------------- */
+var importState = null;   // { sheets, sheetIdx, headerIdx, map }
 
 function setUploadStatus(msg, kind) {
   var el = document.getElementById('uploadStatus');
@@ -169,58 +235,204 @@ function setUploadStatus(msg, kind) {
   el.className = 'upload-status' + (kind ? ' ' + kind : '');
 }
 
+function currentSheet() {
+  return importState && importState.sheets[importState.sheetIdx];
+}
+
+function headerRowCells() {
+  var sh = currentSheet();
+  if (!sh) return [];
+  return (sh.rows[importState.headerIdx] || []).map(function (c, i) {
+    var label = String(c == null ? '' : c).trim();
+    return { idx: i, label: label || ('Column ' + (i + 1)) };
+  });
+}
+
+function autoMap() {
+  var map = {};
+  headerRowCells().forEach(function (col) {
+    var f = matchField(col.label);
+    if (f && map[f] == null) map[f] = col.idx;
+  });
+  return map;
+}
+
+function renderImportPanel() {
+  var panel = document.getElementById('importPanel');
+  var sh = currentSheet();
+  if (!sh) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+
+  // Sheet picker — only worth showing when the file has more than one.
+  var sheetWrap = document.getElementById('importSheetWrap');
+  if (importState.sheets.length > 1) {
+    sheetWrap.classList.remove('hidden');
+    document.getElementById('importSheet').innerHTML = importState.sheets.map(function (s, i) {
+      return '<option value="' + i + '"' + (i === importState.sheetIdx ? ' selected' : '') + '>' +
+        escAttr(s.name) + ' (' + s.dataRows + ' ' + t('importRowsWord') + ')</option>';
+    }).join('');
+  } else {
+    sheetWrap.classList.add('hidden');
+  }
+
+  // Header row picker
+  var opts = [];
+  for (var i = 0; i < Math.min(25, sh.rows.length); i++) {
+    var preview = (sh.rows[i] || []).slice(0, 5)
+      .map(function (c) { return String(c == null ? '' : c).trim(); })
+      .filter(Boolean).join(' · ').slice(0, 58);
+    opts.push('<option value="' + i + '"' + (i === importState.headerIdx ? ' selected' : '') + '>' +
+      t('importRowWord') + ' ' + (i + 1) + (preview ? ' — ' + escAttr(preview) : '') + '</option>');
+  }
+  document.getElementById('importHeaderRow').innerHTML = opts.join('');
+
+  // One dropdown per field we store
+  var cols = headerRowCells();
+  var fieldLabels = {
+    brand: t('thBrand'), type: t('thType'), model: t('thModel'), unitId: t('thId'),
+    capacity: t('thCapacity'), age: t('thAge'), location: t('thLocation'),
+    price: t('thPrice'), contact: t('thContact')
+  };
+  document.getElementById('importMap').innerHTML = EQ_COLS.map(function (key) {
+    var sel = importState.map[key];
+    return '<label class="map-row">' +
+      '<span class="map-field">' + escAttr(fieldLabels[key] || key) + '</span>' +
+      '<select data-field="' + key + '">' +
+      '<option value="">' + t('importIgnore') + '</option>' +
+      cols.map(function (c) {
+        return '<option value="' + c.idx + '"' + (sel === c.idx ? ' selected' : '') + '>' +
+          escAttr(c.label) + '</option>';
+      }).join('') +
+      '</select></label>';
+  }).join('');
+
+  renderImportPreview();
+}
+
+function importRowsFromMapping() {
+  var sh = currentSheet();
+  var cols = headerRowCells();
+  var mapped = {};
+  Object.keys(importState.map).forEach(function (k) {
+    if (importState.map[k] != null) mapped[importState.map[k]] = k;
+  });
+
+  var out = [];
+  for (var i = importState.headerIdx + 1; i < sh.rows.length; i++) {
+    var raw = sh.rows[i];
+    if (!raw || !raw.some(function (c) { return String(c == null ? '' : c).trim(); })) continue;
+
+    var row = blankRow();
+    var extras = {};
+    for (var c = 0; c < cols.length; c++) {
+      var val = String(raw[c] == null ? '' : raw[c]).trim();
+      if (!val || val === 'N/D' || val === 'N/A' || val === '-') continue;
+      if (mapped[c]) row[mapped[c]] = val;
+      else extras[cols[c].label] = val;   // keep it rather than lose it
+    }
+    if (Object.keys(extras).length) row.extras = extras;
+    if (hasAnyValue(row)) out.push(row);
+  }
+  return out;
+}
+
+function renderImportPreview() {
+  var rows = importRowsFromMapping();
+  var el = document.getElementById('importPreview');
+  if (!rows.length) {
+    el.innerHTML = '<p class="import-warn">' + t('importNoRows') + '</p>';
+    document.getElementById('importConfirm').disabled = true;
+    return;
+  }
+  document.getElementById('importConfirm').disabled = false;
+
+  var show = rows.slice(0, 3);
+  var extraKeys = [];
+  rows.forEach(function (r) {
+    Object.keys(r.extras || {}).forEach(function (k) {
+      if (extraKeys.indexOf(k) === -1) extraKeys.push(k);
+    });
+  });
+
+  el.innerHTML =
+    '<table class="import-preview-table"><thead><tr>' +
+      EQ_COLS.map(function (k) { return '<th>' + escAttr(k) + '</th>'; }).join('') +
+    '</tr></thead><tbody>' +
+      show.map(function (r) {
+        return '<tr>' + EQ_COLS.map(function (k) {
+          return '<td>' + escAttr(String(r[k] || '')).slice(0, 26) + '</td>';
+        }).join('') + '</tr>';
+      }).join('') +
+    '</tbody></table>' +
+    (extraKeys.length
+      ? '<p class="import-extra">' + t('importExtraKept').replace('{cols}', extraKeys.slice(0, 8).join(', ')) + '</p>'
+      : '');
+
+  document.getElementById('importCount').textContent =
+    t('importWillAdd').replace('{n}', rows.length);
+}
+
 function handleFiles(fileList) {
   var file = fileList && fileList[0];
   if (!file) return;
-  setUploadStatus('', '');
+  setUploadStatus(t('importReading'), '');
+
   var reader = new FileReader();
   reader.onload = function (e) {
     try {
-      var data = new Uint8Array(e.target.result);
-      var wb = XLSX.read(data, { type: 'array' });
-      var ws = wb.Sheets[wb.SheetNames[0]];
-      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
-      if (!rows.length) { setUploadStatus(currentLang === 'es' ? 'El archivo está vacío.' : 'That file looks empty.', 'err'); return; }
+      var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      var sheets = analyzeWorkbook(wb);
 
-      var colMap = mapHeaders(rows[0]);
-      var added = 0;
-      for (var i = 1; i < rows.length; i++) {
-        var raw = rows[i];
-        if (!raw || raw.every(function (c) { return String(c || '').trim() === ''; })) continue;
-        var row = blankRow();
-        Object.keys(colMap).forEach(function (key) {
-          var idx = colMap[key];
-          if (idx != null && raw[idx] != null) row[key] = String(raw[idx]).trim();
-        });
-        if (row.brand || row.model || row.type) {
-          // drop the single starter blank row before the first real import
-          if (state.equipment.length === 1 && !hasAnyValue(state.equipment[0])) state.equipment.length = 0;
-          state.equipment.push(row);
-          added++;
-        }
+      if (!sheets.length || !sheets[0].dataRows) {
+        setUploadStatus(t('importEmpty'), 'err');
+        document.getElementById('importPanel').classList.add('hidden');
+        return;
       }
-      renderEquipmentTable();
 
-      var msg = added + ' ' + (currentLang === 'es'
-        ? (added === 1 ? 'fila importada' : 'filas importadas')
-        : (added === 1 ? 'row imported' : 'rows imported'));
+      importState = { sheets: sheets, sheetIdx: 0, headerIdx: sheets[0].headerIdx, map: {} };
+      importState.map = autoMap();
 
-      // Every row is nine text inputs. Past a few hundred that is tens of
-      // thousands of DOM nodes, which makes the page crawl on a normal
-      // laptop even though the parse itself was fine. Say so plainly
-      // instead of letting it look like the upload failed.
-      if (state.equipment.length > RENDER_WARN_ROWS) {
-        msg += currentLang === 'es'
-          ? '. Es una lista muy larga — la tabla puede tardar en responder. Puede enviarla igualmente.'
-          : '. That is a long list, so the table below may feel slow. You can still submit it.';
-      }
-      setUploadStatus(msg, added ? 'ok' : 'err');
+      setUploadStatus(
+        t('importFound')
+          .replace('{file}', file.name)
+          .replace('{sheet}', sheets[0].name)
+          .replace('{row}', String(sheets[0].headerIdx + 1)),
+        'ok'
+      );
+      renderImportPanel();
     } catch (err) {
       if (window.console) console.error('Fleet Intake: file parse failed', err);
-      setUploadStatus(currentLang === 'es' ? 'No se pudo leer ese archivo.' : 'Could not read that file.', 'err');
+      setUploadStatus(t('importFailed'), 'err');
+      document.getElementById('importPanel').classList.add('hidden');
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+function confirmImport() {
+  var rows = importRowsFromMapping();
+  if (!rows.length) return;
+
+  if (state.equipment.length === 1 && !hasAnyValue(state.equipment[0])) state.equipment.length = 0;
+  rows.forEach(function (r) { state.equipment.push(r); });
+
+  document.getElementById('importPanel').classList.add('hidden');
+  importState = null;
+  renderEquipmentTable();
+
+  var msg = t('importDone').replace('{n}', rows.length);
+  if (state.equipment.length > RENDER_WARN_ROWS) msg += ' ' + t('importBigList');
+  setUploadStatus(msg, 'ok');
+
+  switchTab('manual');
+  document.querySelector('.eq-table-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function cancelImport() {
+  importState = null;
+  document.getElementById('importPanel').classList.add('hidden');
+  setUploadStatus('', '');
+  document.getElementById('fileInput').value = '';
 }
 
 function hasAnyValue(row) {
@@ -255,7 +467,10 @@ function validateCompany() {
 }
 
 function hasUsableEquipment() {
-  return state.equipment.some(function (r) { return (r.brand && r.brand.trim()) || (r.model && r.model.trim()); });
+  // Matches the submit filter: a row counts if anything at all is filled in.
+  // Many real lists identify a machine by description and serial with no
+  // separate brand or model column.
+  return state.equipment.some(hasAnyValue);
 }
 
 function isCompanyComplete() {
@@ -366,7 +581,10 @@ function onSubmit(e) {
       email: document.getElementById('email').value.trim(),
       phone: document.getElementById('phone').value.trim()
     },
-    equipment: state.equipment.filter(function (r) { return (r.brand && r.brand.trim()) || (r.model && r.model.trim()); })
+    // Any row with something in it counts. Requiring a brand or a model
+    // would silently drop machines from lists that identify a unit by
+    // description and serial alone, which plenty of them do.
+    equipment: state.equipment.filter(hasAnyValue)
   };
   lastPayload = payload;
 
@@ -455,6 +673,40 @@ function init() {
   document.getElementById('browseBtn').addEventListener('click', function () {
     document.getElementById('fileInput').click();
   });
+  document.getElementById('importConfirm').addEventListener('click', confirmImport);
+  document.getElementById('importCancel').addEventListener('click', cancelImport);
+
+  document.getElementById('importSheet').addEventListener('change', function (e) {
+    importState.sheetIdx = Number(e.target.value);
+    // A different sheet has its own header row and its own columns, so the
+    // guess has to be made again rather than carried over.
+    importState.headerIdx = currentSheet().headerIdx;
+    importState.map = autoMap();
+    renderImportPanel();
+  });
+
+  document.getElementById('importHeaderRow').addEventListener('change', function (e) {
+    importState.headerIdx = Number(e.target.value);
+    importState.map = autoMap();
+    renderImportPanel();
+  });
+
+  document.getElementById('importMap').addEventListener('change', function (e) {
+    var sel = e.target.closest('select[data-field]');
+    if (!sel) return;
+    var field = sel.getAttribute('data-field');
+    var val = sel.value === '' ? null : Number(sel.value);
+    // One spreadsheet column cannot feed two of our fields, so assigning it
+    // here takes it away from whichever field had it.
+    if (val != null) {
+      Object.keys(importState.map).forEach(function (k) {
+        if (k !== field && importState.map[k] === val) importState.map[k] = null;
+      });
+    }
+    importState.map[field] = val;
+    renderImportPanel();
+  });
+
   document.getElementById('fileInput').addEventListener('change', function (e) {
     handleFiles(e.target.files);
     e.target.value = '';

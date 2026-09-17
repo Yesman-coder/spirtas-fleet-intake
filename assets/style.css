@@ -353,3 +353,85 @@ footer.site-foot {
   .submit-row { flex-direction: column; align-items: stretch; }
   .submit-row .btn { width: 100%; justify-content: center; }
 }
+
+/* ---------- Import review panel ----------
+   Shown after a file is read, before anything is added: our guess at the
+   sheet, the header row and the column mapping, all editable. */
+.import-panel {
+  margin-top: 16px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  text-align: left;
+}
+.import-panel h3 {
+  font-family: var(--font-display);
+  font-size: 17px;
+  margin: 0 0 4px;
+  letter-spacing: .01em;
+}
+.import-lede { margin: 0 0 16px; font-size: 13px; color: var(--muted); }
+
+.import-controls { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.import-ctl { display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; }
+.import-ctl > span {
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.import-map {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  padding: 14px;
+  background: var(--surface-2);
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+.map-row { display: flex; flex-direction: column; gap: 3px; }
+.map-field {
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.map-row select { font-size: 13px; padding: 7px 9px; }
+
+.import-preview { overflow-x: auto; margin-bottom: 14px; }
+.import-preview-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.import-preview-table th {
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.import-preview-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.import-preview-table td:empty::after { content: '—'; color: var(--border); }
+.import-extra { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.import-warn { margin: 0; font-size: 13px; color: var(--danger); }
+
+.import-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.import-count { flex: 1; font-size: 13px; color: var(--muted); font-weight: 500; }
+
+@media (max-width: 640px) {
+  .import-panel { padding: 16px; }
+  .import-map { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .import-actions .btn { flex: 1; justify-content: center; }
+}
