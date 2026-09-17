@@ -255,6 +255,39 @@ appears once the database has confirmed the write. If something fails,
 the company sees the reason, their typed list is still on screen, and
 they can fix it and submit again without retyping anything.
 
+
+## Email when someone registers
+
+Off until you configure it.  adds a
+database trigger that posts to [Resend](https://resend.com) whenever a
+company registers through the public form. It sends from Postgres itself,
+so there is no Edge Function to deploy and nothing to install locally.
+
+1. Run  in the SQL editor.
+2. Get a Resend API key (free tier: 3,000 emails a month), then edit and run
+   the  block at the bottom of that file
+   with your key and the addresses that should receive it.
+3. Test it without waiting for a real submission:
+   
+The key is held in , which has row-level security
+on and no policies at all, so it cannot be read through the API by anyone,
+signed in or not. Only the trigger reads it.
+
+Two things worth knowing:
+
+- **A failed send can never lose a registration.** The trigger swallows its
+  own errors and records them in . If Resend is down,
+  the submission still saves.
+- **Bulk imports do not email.** The trigger only fires on ,
+  so loading ten companies from a spreadsheet does not send ten emails.
+
+To check what happened:
+
+\
+Start on , which works immediately. For reliable
+delivery verify spirtasworldwide.com at resend.com/domains and switch
+ to an address on it.
+
 ## Limits worth knowing
 
 - **The public endpoint is not rate limited.** Anyone who finds the page can
