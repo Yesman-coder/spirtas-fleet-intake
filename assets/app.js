@@ -171,6 +171,7 @@ function renderEquipmentTable() {
       });
       updateEqCount();
       updateSteps();
+      renderScopeSummary();
       return;   // the editable table stays unrendered, which is the point
     }
   }
@@ -182,6 +183,7 @@ function renderEquipmentTable() {
   }
   updateEqCount();
   updateSteps();
+  renderScopeSummary();
 }
 
 function updateEqCount() {
@@ -484,6 +486,39 @@ function handleFiles(fileList) {
   reader.readAsArrayBuffer(file);
 }
 
+/* What of this list we would actually register, shown before submitting so
+   nobody is surprised later. Nothing is removed from their list: out-of-scope
+   machines still go with the submission and are simply not counted as fleet. */
+function renderScopeSummary() {
+  var el = document.getElementById('scopeSummary');
+  if (!el || typeof FleetScope === 'undefined') return;
+
+  var rows = state.equipment.filter(hasAnyValue);
+  if (!rows.length) { el.classList.add('hidden'); return; }
+
+  var s = FleetScope.summarize(rows);
+  el.classList.remove('hidden');
+
+  if (!s.in && !s.review) {
+    el.className = 'scope-summary err';
+    el.innerHTML = '<p>' + t('scopeSummaryNone') + '</p>';
+    return;
+  }
+
+  var parts = ['<p class="ss-in">' + t('scopeSummaryIn').replace('{n}', s.in) + '</p>'];
+  if (s.out) {
+    parts.push('<p class="ss-out">' + t('scopeSummaryOut').replace('{n}', s.out) +
+      (s.outSamples.length
+        ? ' <span class="ss-eg">' + t('scopeWhatOut').replace('{list}', escAttr(s.outSamples.join(', '))) + '</span>'
+        : '') + '</p>');
+  }
+  if (s.review) {
+    parts.push('<p class="ss-review">' + t('scopeSummaryReview').replace('{n}', s.review) + '</p>');
+  }
+  el.className = 'scope-summary';
+  el.innerHTML = parts.join('');
+}
+
 /* Put the imported rows into the list, replacing whatever a previous pass of
    this same file put there. Called on load and again on every mapping change,
    so what is on screen is always what would be submitted. */
@@ -691,7 +726,16 @@ function onSubmit(e) {
     // Any row with something in it counts. Requiring a brand or a model
     // would silently drop machines from lists that identify a unit by
     // description and serial alone, which plenty of them do.
-    equipment: state.equipment.filter(hasAnyValue)
+    equipment: state.equipment.filter(hasAnyValue).map(function (r) {
+      // The classifier's verdict rides with each machine so the database
+      // stores the same decision the company was shown.
+      if (typeof FleetScope !== 'undefined') {
+        var v = FleetScope.classify(r);
+        r.scope = v.scope;
+        r.scopeReason = v.reason;
+      }
+      return r;
+    })
   };
   lastPayload = payload;
 
@@ -748,9 +792,25 @@ function onSubmit(e) {
 /* ---------------------------------------------------------
    Wire everything up
    --------------------------------------------------------- */
+function showScopeModal() {
+  var m = document.getElementById('scopeModal');
+  if (!m) return;
+  // Shown once per browser: a returning company does not need telling twice.
+  var seen = false;
+  try { seen = localStorage.getItem('fleetScopeSeen') === '1'; } catch (e) { /* ignore */ }
+  if (seen) { m.classList.add('hidden'); return; }
+  m.classList.add('show');
+  document.getElementById('scopeAccept').addEventListener('click', function () {
+    m.classList.remove('show');
+    m.classList.add('hidden');
+    try { localStorage.setItem('fleetScopeSeen', '1'); } catch (e) { /* ignore */ }
+  });
+}
+
 function init() {
   state.equipment.push(blankRow());
   currentLang = detectInitialLang();
+  showScopeModal();
   applyI18n();
   switchTab('manual');
 

@@ -13,6 +13,26 @@
 </head>
 <body>
 
+<!-- Shown once on arrival: what we are actually looking for. -->
+<div class="scope-modal" id="scopeModal" role="dialog" aria-modal="true" aria-labelledby="scopeModalTitle">
+  <div class="scope-card">
+    <img src="assets/logo.png" alt="Spirtas Worldwide" class="scope-logo">
+    <h2 id="scopeModalTitle" data-i18n="scopeTitle">What we are looking for</h2>
+    <p class="scope-body" data-i18n="scopeBody">
+      We are looking for demolition and construction machinery and equipment to take part in
+      the La Guaira works. Other classes of equipment will not be registered in our database.
+    </p>
+    <ul class="scope-list">
+      <li data-i18n="scopeYes">Excavators, loaders, dozers, cranes, compactors, dump trucks, crushers, breakers, concrete and asphalt plant, generators, compressors</li>
+      <li class="scope-no" data-i18n="scopeNo">Not registered: passenger vehicles and pickups, laboratory equipment, office furniture and IT, agricultural machinery</li>
+    </ul>
+    <p class="scope-note" data-i18n="scopeNote">
+      Send your list as it is. Anything outside this scope is simply set aside, not counted, and never deleted.
+    </p>
+    <button type="button" class="btn btn-primary" id="scopeAccept" data-i18n="scopeAccept">Understood, continue</button>
+  </div>
+</div>
+
 <header class="topbar">
   <div class="topbar-inner">
     <div class="brand">
@@ -121,6 +141,8 @@
         </div>
       </div>
 
+      <div class="scope-summary hidden" id="scopeSummary"></div>
+
       <!-- Compact summary, used instead of the editable table for long imports -->
       <div class="compact-view hidden" id="compactView"></div>
 
@@ -177,6 +199,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="assets/config.js"></script>
 <script src="assets/i18n.js"></script>
+<script src="assets/scope.js"></script>
 <script src="assets/app.js"></script>
 </body>
 </html>

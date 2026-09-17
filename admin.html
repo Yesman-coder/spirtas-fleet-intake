@@ -181,6 +181,12 @@
       <select id="mFamily"  aria-label="Filter by machine family"><option value="">All families</option></select>
       <select id="mBrand"   aria-label="Filter by brand"><option value="">All brands</option></select>
       <select id="mYear"    aria-label="Filter by year"><option value="">Any year</option></select>
+      <div class="seg" role="group" aria-label="Filter by scope">
+        <button type="button" class="seg-btn" data-scope="in" aria-pressed="true" title="Demolition and construction plant">Fleet</button>
+        <button type="button" class="seg-btn" data-scope="review" aria-pressed="false" title="Not yet classified">Review</button>
+        <button type="button" class="seg-btn" data-scope="out" aria-pressed="false" title="Outside what we are looking for">Set aside</button>
+        <button type="button" class="seg-btn" data-scope="all" aria-pressed="false">All</button>
+      </div>
       <button type="button" class="btn btn-sm" id="mClear">Clear</button>
     </section>
 
@@ -387,6 +393,7 @@
 <!-- HEADER_ALIASES lives here; the importer shares it with the public form
      so a column spelling learned in one place works in both. -->
 <script src="assets/i18n.js"></script>
+<script src="assets/scope.js"></script>
 <script src="assets/admin.js"></script>
 </body>
 </html>

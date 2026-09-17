@@ -702,7 +702,7 @@
     all: null,          // every machine, loaded once
     filtered: [],
     shown: 0,
-    search: '', company: '', family: '', brand: '', year: '',
+    search: '', company: '', family: '', brand: '', year: '', scope: 'in',
     sortKey: 'company_name', sortAsc: true
   };
   var M_PAGE = 200;
@@ -724,7 +724,7 @@
     var acc = [];
     function page(from) {
       client.from('equipment')
-        .select('id,row_index,brand,type,type_es,model,unit_id,capacity,age,location,location_es,price,contact,machine_family,machine_family_es,condition,year,qty,submission_id,submissions!inner(company_name,status,source)')
+        .select('id,row_index,brand,type,type_es,model,unit_id,capacity,age,location,location_es,price,contact,machine_family,machine_family_es,condition,year,qty,scope,scope_reason,submission_id,submissions!inner(company_name,status,source)')
         .order('id', { ascending: true })
         .range(from, from + 999)
         .then(function (res) {
@@ -790,6 +790,8 @@
   function applyMachineFilters() {
     var term = fold(mState.search).trim();
     mState.filtered = mState.all.filter(function (r) {
+      // Default view is the fleet: what we are actually looking for.
+      if (mState.scope !== 'all' && (r.scope || 'review') !== mState.scope) return false;
       if (mState.company && r.company_name !== mState.company) return false;
       if (mState.family  && r.machine_family !== mState.family) return false;
       if (mState.brand   && r.brand !== mState.brand) return false;
@@ -885,7 +887,9 @@
     if (mState.brand)   bits.push(mState.brand);
     if (mState.year)    bits.push(mState.year);
     if (mState.search)  bits.push('“' + mState.search + '”');
-    var what = bits.length ? bits.join(' · ') : 'All machines';
+    var SCOPE_LABEL = { in: 'Fleet', review: 'Awaiting review', out: 'Set aside', all: 'Everything submitted' };
+    var what = bits.length ? bits.join(' · ') : SCOPE_LABEL[mState.scope];
+    if (bits.length && mState.scope !== 'in') what = SCOPE_LABEL[mState.scope] + ' · ' + what;
     if (mState.company) what += (bits.length ? ' — ' : '') + mState.company;
     $('mAnswerWhat').textContent = what;
 
@@ -1138,6 +1142,16 @@
           renderMachines();
         });
       });
+
+    document.querySelectorAll('#machinesView .seg-btn').forEach(function (b) {
+      b.addEventListener('click', function () {
+        mState.scope = b.getAttribute('data-scope');
+        document.querySelectorAll('#machinesView .seg-btn').forEach(function (x) {
+          x.setAttribute('aria-pressed', String(x === b));
+        });
+        renderMachines();
+      });
+    });
 
     $('mClear').addEventListener('click', function () {
       mState.search = mState.company = mState.family = mState.brand = mState.year = '';
