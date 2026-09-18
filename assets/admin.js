@@ -43,6 +43,7 @@
     sortKey: 'submitted_at',
     sortAsc: false,
     expanded: {},      // submission id -> true
+    selected: {},      // submission id -> true (ticked for bulk delete)
     equipment: {},     // submission id -> array (cached after first fetch)
     loading: false
   };
@@ -408,7 +409,11 @@
   function rowHtml(r) {
     var telHref = 'tel:' + String(r.phone || '').replace(/[^\d+]/g, '');
     return '' +
-      '<tr class="row-main' + (state.expanded[r.id] ? ' open' : '') + '" data-id="' + esc(r.id) + '">' +
+      '<tr class="row-main' + (state.expanded[r.id] ? ' open' : '') +
+        (state.selected[r.id] ? ' picked' : '') + '" data-id="' + esc(r.id) + '">' +
+        '<td class="col-pick"><input type="checkbox" class="row-pick" data-pick="' + esc(r.id) + '"' +
+          (state.selected[r.id] ? ' checked' : '') +
+          ' aria-label="Select ' + esc(r.company_name) + '"></td>' +
         '<td class="col-expand"><button type="button" class="expand-btn" aria-label="Show equipment" ' +
           'aria-expanded="' + (state.expanded[r.id] ? 'true' : 'false') + '">&#9654;</button></td>' +
         '<td><span class="cell-company">' + esc(r.company_name) + '</span>' +
@@ -457,13 +462,14 @@
     var options = statusOptionsHtml(r);
 
     return '' +
-      '<tr class="row-detail" data-detail-for="' + esc(r.id) + '"><td colspan="8"><div class="detail-inner">' +
+      '<tr class="row-detail" data-detail-for="' + esc(r.id) + '"><td colspan="9"><div class="detail-inner">' +
         '<div class="detail-head">' +
           '<h3 class="detail-title">' + esc(r.company_name) + ' · ' + fmtNum(r.equipment_count) +
             (Number(r.equipment_count) === 1 ? ' machine' : ' machines') + '</h3>' +
           '<div class="detail-tools">' +
             '<select class="status-select" data-id="' + esc(r.id) + '" aria-label="Change status">' + options + '</select>' +
             '<button type="button" class="btn btn-sm" data-row-csv="' + esc(r.id) + '">Download this list</button>' +
+            '<button type="button" class="btn btn-sm btn-danger" data-row-delete="' + esc(r.id) + '">Delete</button>' +
           '</div>' +
         '</div>' + body +
       '</div></td></tr>';
@@ -495,6 +501,7 @@
     }
 
     $('loadMoreBtn').classList.toggle('hidden', !state.hasMore);
+    renderBulkBar();
 
     // Reflect the active sort in the header
     var ths = document.querySelectorAll('#companiesView th.sortable');
@@ -1387,6 +1394,7 @@
         '<div class="detail-tools">' +
           '<select class="status-select" data-id="' + esc(r.id) + '" aria-label="Change status">' + statusOptionsHtml(r) + '</select>' +
           '<button type="button" class="btn btn-sm" data-row-csv="' + esc(r.id) + '">Download this list</button>' +
+          '<button type="button" class="btn btn-sm btn-danger" data-row-delete="' + esc(r.id) + '">Delete</button>' +
         '</div>' +
       '</div>' + eqBodyHtml(r.id);
   }
@@ -1508,6 +1516,9 @@
       var csvBtn = e.target.closest('[data-row-csv]');
       if (csvBtn) { exportSingle(csvBtn.getAttribute('data-row-csv')); return; }
 
+      var delBtn = e.target.closest('[data-row-delete]');
+      if (delBtn) { openDeleteModal([delBtn.getAttribute('data-row-delete')]); return; }
+
       if (e.target.closest('a') || e.target.closest('select') || e.target.closest('.act-detail')) return;
 
       var row = e.target.closest('.act-row');
@@ -1525,6 +1536,208 @@
     $('actTimeline').addEventListener('change', function (e) {
       var sel = e.target.closest('.status-select');
       if (sel) changeStatus(sel.getAttribute('data-id'), sel.value);
+    });
+  }
+
+  /* =========================================================
+     Deleting registrations
+
+     A delete is permanent and takes the machines with it
+     (public.equipment is ON DELETE CASCADE). The database
+     already allowed this — schema.sql carries an "admins
+     delete submissions" policy — so everything here is the
+     part that makes it deliberate rather than easy.
+
+     Two paths, with friction in proportion to the blast
+     radius: one row asks for a click, several rows ask you to
+     type DELETE. The dialog names what is going either way,
+     because this table holds real imported companies as well
+     as test rows.
+     ========================================================= */
+
+  var del = {
+    ids: [],        // what the open dialog would delete
+    rows: [],       // their submission records, for the dialog's list
+    busy: false
+  };
+
+  function selectedIds() {
+    return Object.keys(state.selected);
+  }
+
+  function renderBulkBar() {
+    var ids = selectedIds();
+    var bar = $('bulkBar');
+
+    bar.classList.toggle('hidden', ids.length === 0);
+    $('bulkCount').textContent = ids.length === 1
+      ? '1 registration selected'
+      : fmtNum(ids.length) + ' registrations selected';
+
+    // Checked only when every loaded row is picked; a partial pick shows the
+    // indeterminate dash, which is the honest state for "some of these".
+    var all = $('pickAll');
+    var loaded = state.rows.length;
+    var picked = state.rows.filter(function (r) { return state.selected[r.id]; }).length;
+    all.checked = loaded > 0 && picked === loaded;
+    all.indeterminate = picked > 0 && picked < loaded;
+  }
+
+  function clearSelection() {
+    state.selected = {};
+    document.querySelectorAll('#rowsBody .row-pick').forEach(function (cb) {
+      cb.checked = false;
+      var tr = cb.closest('tr.row-main');
+      if (tr) tr.classList.remove('picked');
+    });
+    renderBulkBar();
+  }
+
+  /* ---------- The dialog ---------- */
+
+  function openDeleteModal(ids) {
+    if (!ids.length) return;
+
+    // Look the rows up in whichever view is open, so the dialog can name them.
+    var pool = state.rows.concat(aState.rows);
+    del.ids = ids;
+    del.rows = ids.map(function (id) {
+      for (var i = 0; i < pool.length; i++) if (pool[i].id === id) return pool[i];
+      return { id: id, company_name: refOf(id), equipment_count: 0 };
+    });
+
+    var bulk = ids.length > 1;
+    var machines = del.rows.reduce(function (t, r) { return t + Number(r.equipment_count || 0); }, 0);
+
+    $('deleteLede').innerHTML = bulk
+      ? 'You are about to delete <b>' + fmtNum(ids.length) + ' registrations</b> and the <b>' +
+        fmtNum(machines) + '</b> machines listed on them.'
+      : 'You are about to delete <b>' + esc(del.rows[0].company_name) + '</b> and the <b>' +
+        fmtNum(machines) + '</b> ' + (machines === 1 ? 'machine' : 'machines') + ' listed on it.';
+
+    $('deleteList').innerHTML = bulk
+      ? del.rows.slice(0, 12).map(function (r) {
+          return '<div class="delete-item"><span>' + esc(r.company_name) + '</span>' +
+                 '<span class="delete-item-n">' + fmtNum(r.equipment_count) + '</span></div>';
+        }).join('') +
+        (del.rows.length > 12
+          ? '<div class="delete-item delete-item-more">…and ' + fmtNum(del.rows.length - 12) + ' more</div>'
+          : '')
+      : '';
+
+    // Typing the word is reserved for multi-row deletes. Demanding it for a
+    // single row would train people to type it without reading.
+    $('deleteConfirmWrap').classList.toggle('hidden', !bulk);
+    $('deleteConfirmInput').value = '';
+    $('deleteStatus').textContent = '';
+    $('deleteConfirm').textContent = bulk ? 'Delete ' + fmtNum(ids.length) : 'Delete';
+    $('deleteConfirm').disabled = bulk;
+
+    $('deleteModal').classList.remove('hidden');
+    (bulk ? $('deleteConfirmInput') : $('deleteCancel')).focus();
+  }
+
+  function closeDeleteModal() {
+    if (del.busy) return;
+    $('deleteModal').classList.add('hidden');
+    del.ids = [];
+    del.rows = [];
+  }
+
+  /* ---------- The delete itself ---------- */
+
+  function runDelete() {
+    if (del.busy || !del.ids.length) return;
+    var ids = del.ids.slice();
+
+    del.busy = true;
+    $('deleteConfirm').disabled = true;
+    $('deleteStatus').textContent = 'Deleting…';
+
+    // .select() makes the database report which rows actually went. Without it
+    // a policy that quietly matches nothing looks identical to a success.
+    client.from('submissions').delete().in('id', ids).select('id')
+      .then(function (res) {
+        del.busy = false;
+
+        if (res.error) {
+          $('deleteStatus').textContent = '';
+          $('deleteConfirm').disabled = false;
+          toast('Could not delete: ' + res.error.message, true);
+          return;
+        }
+
+        var gone = (res.data || []).length;
+
+        $('deleteModal').classList.add('hidden');
+        del.ids = [];
+        del.rows = [];
+
+        ids.forEach(function (id) {
+          delete state.selected[id];
+          delete state.expanded[id];
+          delete aState.expanded[id];
+          delete state.equipment[id];
+        });
+
+        // The machines view is built from a cached join over submissions, so
+        // it has to be rebuilt rather than filtered.
+        mState.all = null;
+
+        if (gone === 0) {
+          toast('Nothing was deleted. Your account may not be on the admin list.', true);
+        } else if (gone < ids.length) {
+          toast('Deleted ' + fmtNum(gone) + ' of ' + fmtNum(ids.length) + ' — the rest were already gone', true);
+        } else {
+          toast(gone === 1 ? 'Registration deleted' : fmtNum(gone) + ' registrations deleted');
+        }
+
+        // Re-query rather than splicing the arrays: totals, pagination and the
+        // "new since last visit" count all have to agree with the database.
+        reload();
+        if (state.view === 'activity') loadActivity();
+        if (state.view === 'machines') loadAllEquipment();
+      });
+  }
+
+  function wireDelete() {
+    $('deleteClose').addEventListener('click', closeDeleteModal);
+    $('deleteCancel').addEventListener('click', closeDeleteModal);
+    $('deleteConfirm').addEventListener('click', runDelete);
+
+    $('deleteConfirmInput').addEventListener('input', function (e) {
+      $('deleteConfirm').disabled = e.target.value.trim().toUpperCase() !== 'DELETE';
+    });
+
+    $('deleteConfirmInput').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !$('deleteConfirm').disabled) runDelete();
+    });
+
+    $('deleteModal').addEventListener('click', function (e) {
+      if (e.target === $('deleteModal')) closeDeleteModal();
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !$('deleteModal').classList.contains('hidden')) closeDeleteModal();
+    });
+
+    $('bulkDelete').addEventListener('click', function () { openDeleteModal(selectedIds()); });
+    $('bulkClear').addEventListener('click', clearSelection);
+
+    // Select-all covers the rows actually loaded, not the whole filtered set.
+    // Ticking a box must never select rows that are not on screen to be read.
+    $('pickAll').addEventListener('change', function (e) {
+      var on = e.target.checked;
+      state.rows.forEach(function (r) {
+        if (on) state.selected[r.id] = true; else delete state.selected[r.id];
+      });
+
+      document.querySelectorAll('#rowsBody .row-pick').forEach(function (cb) {
+        cb.checked = on;
+        var tr = cb.closest('tr.row-main');
+        if (tr) tr.classList.toggle('picked', on);
+      });
+      renderBulkBar();
     });
   }
 
@@ -2230,6 +2443,7 @@
     wireMachinesView();
     wireFleetView();
     wireActivityView();
+    wireDelete();
     wireImport();
     $('refreshBtn').addEventListener('click', function () {
       state.equipment = {};
@@ -2284,13 +2498,29 @@
       var csvBtn = e.target.closest('[data-row-csv]');
       if (csvBtn) { exportSingle(csvBtn.getAttribute('data-row-csv')); return; }
 
-      if (e.target.closest('a') || e.target.closest('select')) return;
+      var delBtn = e.target.closest('[data-row-delete]');
+      if (delBtn) { openDeleteModal([delBtn.getAttribute('data-row-delete')]); return; }
+
+      // Ticking a box must not also expand the row underneath it.
+      if (e.target.closest('a') || e.target.closest('select') || e.target.closest('.col-pick')) return;
 
       var row = e.target.closest('tr.row-main');
       if (row) toggleRow(row.getAttribute('data-id'));
     });
 
     $('rowsBody').addEventListener('change', function (e) {
+      var pick = e.target.closest('.row-pick');
+      if (pick) {
+        var pid = pick.getAttribute('data-pick');
+        if (pick.checked) state.selected[pid] = true; else delete state.selected[pid];
+
+        // Touch only what changed. A full render() here would replace the
+        // checkbox mid-click, losing focus and swallowing a quick second tick.
+        var tr = pick.closest('tr.row-main');
+        if (tr) tr.classList.toggle('picked', !!state.selected[pid]);
+        renderBulkBar();
+        return;
+      }
       var sel = e.target.closest('.status-select');
       if (sel) changeStatus(sel.getAttribute('data-id'), sel.value);
     });

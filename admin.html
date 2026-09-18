@@ -138,12 +138,19 @@
 
   <p class="result-note" id="resultNote"></p>
 
+  <div class="bulk-bar hidden" id="bulkBar" role="region" aria-label="Selected registrations" aria-live="polite">
+    <span class="bulk-count" id="bulkCount"></span>
+    <button type="button" class="btn btn-sm btn-ghost" id="bulkClear">Clear selection</button>
+    <button type="button" class="btn btn-sm btn-danger" id="bulkDelete">Delete selected</button>
+  </div>
+
   <!-- Table -->
   <section class="card table-card">
     <div class="table-scroll">
       <table class="admin-table">
         <thead>
           <tr>
+            <th class="col-pick"><input type="checkbox" id="pickAll" aria-label="Select every loaded registration"></th>
             <th class="col-expand"><span class="sr-only">Expand</span></th>
             <th class="sortable" data-sort="company_name">Company</th>
             <th class="sortable" data-sort="contact_person">Contact</th>
@@ -434,6 +441,43 @@
       <span class="import-count" id="admCount"></span>
       <button type="button" class="btn btn-ghost" id="admCancel">Cancel</button>
       <button type="button" class="btn btn-primary" id="admConfirm" disabled>Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== Delete confirmation ===================== -->
+<div class="modal hidden" id="deleteModal" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+  <div class="modal-card modal-sm">
+    <div class="modal-head">
+      <h2 id="deleteModalTitle">Delete permanently?</h2>
+      <button type="button" class="modal-close" id="deleteClose" aria-label="Close">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <p class="modal-lede" id="deleteLede"></p>
+
+      <div class="delete-list" id="deleteList"></div>
+
+      <p class="delete-warn">
+        This cannot be undone. The registration and every machine listed on it
+        are removed from the database.
+      </p>
+
+      <p class="modal-hint">
+        Just clearing the dashboard? <strong>Archive</strong> keeps the record
+        and takes it out of the default view.
+      </p>
+
+      <label class="delete-confirm hidden" id="deleteConfirmWrap">
+        <span>Type <b>DELETE</b> to confirm</span>
+        <input type="text" id="deleteConfirmInput" autocomplete="off" spellcheck="false" placeholder="DELETE">
+      </label>
+    </div>
+
+    <div class="modal-foot">
+      <span class="import-count" id="deleteStatus"></span>
+      <button type="button" class="btn btn-ghost" id="deleteCancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="deleteConfirm">Delete</button>
     </div>
   </div>
 </div>

@@ -143,6 +143,28 @@ status, or download just that company's list.
 **Statuses** are `new` → `reviewed` → `archived`. They are only for your
 own triage; the company never sees them.
 
+**Deleting** is permanent and takes the machines with it, because
+`public.equipment` is `ON DELETE CASCADE`. Two ways in:
+
+- **One at a time** — expand a registration and use **Delete**, in either
+  the Companies table or the Activity feed. The dialog names the company
+  and how many machines go with it.
+- **Several at once** — tick the boxes in the left-hand column of the
+  Companies table, then **Delete selected**. Because this is the table
+  that also holds the imported subcontractor registrations, a multi-row
+  delete lists what is about to go and makes you type `DELETE` first.
+
+Select-all covers the rows currently loaded, not the whole filtered set,
+so a tick can never remove something that was never on screen to read.
+
+If you only want a registration out of the way, **archive** it instead.
+The record survives and drops out of the default filter.
+
+Deletion is allowed by the `admins delete submissions` policy in
+`schema.sql`, so it is the database that decides who may do it, not the
+dashboard. If your account is not on the admin list the delete removes
+nothing and the dashboard says so rather than pretending it worked.
+
 **Download CSV** exports whatever the current filters are showing:
 
 | Option | What you get |
