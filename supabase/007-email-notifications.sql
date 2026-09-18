@@ -169,6 +169,8 @@ create trigger trg_notify_new_submission
 -- like fleet@spirtasworldwide.com for reliable delivery.
 -- ---------------------------------------------------------
 
+-- Uncomment, paste your key, and run. Or use 008-turn-on-email.sql,
+-- which does this with a before/after check around it.
 /*
 update public.notify_settings set
   resend_api_key = 're_XXXXXXXXXXXXXXXXXXXXXXXX',
