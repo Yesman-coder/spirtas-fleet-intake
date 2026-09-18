@@ -123,6 +123,15 @@ instructions (a `CNAME` record pointing at your `github.io` address).
 
 ## Using the dashboard
 
+The dashboard has four views, on the toggle under the title:
+
+| View | What it answers |
+|---|---|
+| **Companies** | Who has registered, as a filterable table. |
+| **Machines** | How many of a given machine exist across every company. |
+| **Our fleet** | What Spirtas already controls, and where we are short. |
+| **Activity** | What arrived, and when. Grouped by day, newest first, with anything since your last visit flagged. |
+
 **Search** covers company name, contact person, email, phone and the
 reference code. **Status** and the date range narrow the list further.
 Every filter runs in the database, so it searches everything, not just
@@ -256,46 +265,45 @@ the company sees the reason, their typed list is still on screen, and
 they can fix it and submit again without retyping anything.
 
 
-## Email when someone registers
+## Knowing when someone registers
 
-Off until you configure it. `supabase/007-email-notifications.sql` adds a
-database trigger that posts to [Resend](https://resend.com) whenever a
-company registers through the public form. It sends from Postgres itself,
-so there is no Edge Function to deploy and nothing to install locally.
+The **Activity** view is the answer to "has anyone registered?". It lists
+every submission in the order it arrived, newest first, grouped by day:
+*Today*, *Yesterday*, then dated headers, each entry carrying the exact
+time it landed.
 
-1. Run `007-email-notifications.sql` in the SQL editor.
-2. Get a Resend API key (free tier: 3,000 emails a month), then edit and run
-   the `update public.notify_settings` block at the bottom of that file with
-   your key and the addresses that should receive it.
-3. Test it without waiting for a real submission:
-   `select public.test_notification();`
+Anything that arrived since you last opened the view is flagged
+**Unseen**, with a count at the top: *"3 new registrations since your last
+visit, Sep 17 at 5:03 PM."* Open the view and the flags stay put while you
+read, so a refresh does not wipe them; **Mark all as seen** clears them
+when you are done.
 
-The key is held in `public.notify_settings`, which has row-level security on
-and no policies at all, so it cannot be read through the API by anyone,
-signed in or not. Only the trigger reads it.
+That watermark is stored in your own browser, not the database. It answers
+a question about one person at one desk, so two admins looking at the same
+data never clear each other's marks. In a private window, or with site
+data blocked, the marks simply do not appear and the rest of the view
+works normally.
 
-Two things worth knowing:
+The filters are **All / Form / Imported** and a date range. *Form* is what
+companies submitted themselves; *Imported* is what an admin loaded from a
+spreadsheet, which is why a bulk import shows as a cluster of entries all
+at the same minute. Click any entry to expand its machinery list, change
+its status, or download just that company's list.
 
-- **A failed send can never lose a registration.** The trigger swallows its
-  own errors and records them in `public.notify_log`. If Resend is down, the
-  submission still saves.
-- **Bulk imports do not email.** The trigger fires only on `source = 'web'`,
-  so loading ten companies from a spreadsheet does not send ten emails.
+### There is no email notification
 
-To check what happened:
+There was one, built on a Postgres trigger and [Resend](https://resend.com).
+It is gone: `supabase/011-retire-email-notifications.sql` removes the
+trigger, both functions, and the `notify_settings` and `notify_log`
+tables.
 
-```sql
-select sent_at, company_name, ok, detail
-from public.notify_log order by sent_at desc limit 10;
+If you applied the old `007` migration to a database, run `011` against
+it. `notify_settings` held a live Resend API key, and dropping the table
+is the point of the migration as much as stopping the sends. Rotate or
+delete that key at resend.com/api-keys too, since a credential is only
+really gone once the provider says so.
 
--- what Resend replied (200 = accepted)
-select id, status_code, content
-from net._http_response order by id desc limit 5;
-```
-
-Start on `onboarding@resend.dev`, which works immediately with no setup. For
-reliable delivery, verify spirtasworldwide.com at resend.com/domains and
-change `from_email` to an address on it.
+---
 
 ## Limits worth knowing
 

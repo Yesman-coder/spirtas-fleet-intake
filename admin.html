@@ -63,6 +63,7 @@
         <button type="button" class="view-btn" data-view="companies" aria-pressed="true">Companies</button>
         <button type="button" class="view-btn" data-view="machines" aria-pressed="false">Machines</button>
         <button type="button" class="view-btn" data-view="fleet" aria-pressed="false">Our fleet</button>
+        <button type="button" class="view-btn" data-view="activity" aria-pressed="false">Activity</button>
       </div>
     </div>
     <div class="admin-actions">
@@ -308,6 +309,56 @@
     </section>
 
   </div><!-- /fleetView -->
+
+  <!-- ===================== Activity ===================== -->
+  <div id="activityView" class="hidden">
+
+    <p class="act-lede">
+      Every registration in the order it arrived, newest first. Open this
+      first: anything that landed since your last visit is marked, so a new
+      company gets noticed without an email having to arrive.
+    </p>
+
+    <section class="act-banner hidden" id="actBanner" aria-live="polite">
+      <span class="act-banner-dot" aria-hidden="true"></span>
+      <p class="act-banner-text" id="actBannerText"></p>
+      <button type="button" class="btn btn-sm" id="actMarkSeen">Mark all as seen</button>
+    </section>
+
+    <section class="filter-row">
+      <div class="filter-search">
+        <input type="search" id="actSearch" placeholder="Search company, contact, email, phone, reference…" aria-label="Search activity">
+      </div>
+      <div class="seg" role="group" aria-label="Filter by how it arrived">
+        <button type="button" class="seg-btn" data-asource="all" aria-pressed="true">All</button>
+        <button type="button" class="seg-btn" data-asource="web" aria-pressed="false" title="Submitted through the public intake form">Form</button>
+        <button type="button" class="seg-btn" data-asource="master" aria-pressed="false" title="Loaded from a spreadsheet by an admin">Imported</button>
+      </div>
+      <select id="actRange" aria-label="Filter by date">
+        <option value="all">All time</option>
+        <option value="today">Today</option>
+        <option value="7">Last 7 days</option>
+        <option value="30">Last 30 days</option>
+        <option value="90">Last 90 days</option>
+      </select>
+    </section>
+
+    <p class="result-note" id="actNote"></p>
+
+    <section class="card act-card">
+      <div class="timeline" id="actTimeline"></div>
+      <div class="table-loading" id="actLoading"><span class="spinner" aria-hidden="true"></span> Loading activity…</div>
+      <div class="table-empty hidden" id="actEmpty">
+        <p class="empty-title">Nothing here yet</p>
+        <p class="empty-body">Registrations appear the moment a company submits the intake form.</p>
+      </div>
+    </section>
+
+    <div class="load-more-row">
+      <button type="button" class="btn hidden" id="actMore">Show earlier activity</button>
+    </div>
+
+  </div><!-- /activityView -->
 
 </main>
 

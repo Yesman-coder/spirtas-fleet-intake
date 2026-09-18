@@ -76,8 +76,15 @@
 }
 .admin-actions { display: flex; gap: 10px; align-items: center; }
 
-/* ---------- Companies / Machines toggle ---------- */
-.view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; margin-top: 10px; }
+/* ---------- View toggle ---------- */
+.view-toggle {
+  display: inline-flex;
+  flex-wrap: wrap;            /* four tabs: let them wrap rather than overflow */
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+  margin-top: 10px;
+}
 .view-btn {
   font-family: var(--font-display);
   font-size: 13px;
@@ -641,3 +648,271 @@ tr.row-detail > td { padding: 0; background: var(--surface-2); border-bottom: 1p
 .mode-opt strong { display: block; font-size: 13.5px; color: var(--ink); margin-bottom: 2px; }
 
 @media (max-width: 640px) { .import-mode { grid-template-columns: 1fr; } }
+
+/* =========================================================
+   Activity feed
+
+   A vertical timeline: a fixed time gutter on the left, a rail
+   with a dot, then the company. The eye runs down one column of
+   times, which is the whole point of the view — when did things
+   arrive, and what landed since I last looked.
+   ========================================================= */
+
+.act-lede {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 14px;
+  max-width: 64ch;
+}
+
+/* ---------- Since-last-visit banner ---------- */
+.act-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin: 0 0 16px;
+  border: 1px solid var(--brand-green);
+  border-radius: 10px;
+  background: var(--brand-green-tint);
+}
+.act-banner-dot {
+  flex: none;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--brand-green);
+  box-shadow: 0 0 0 4px rgba(121, 178, 84, .22);
+}
+.act-banner-text {
+  margin: 0;
+  flex: 1;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.act-banner-text strong { font-variant-numeric: tabular-nums; }
+
+/* Nothing new is worth saying too, just quietly. */
+.act-banner.is-quiet {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+.act-banner.is-quiet .act-banner-dot {
+  background: var(--muted);
+  box-shadow: none;
+  opacity: .5;
+}
+.act-banner.is-quiet .act-banner-text { color: var(--muted); }
+
+/* ---------- Card ---------- */
+.act-card { padding: 0; overflow: hidden; }
+
+/* ---------- Day header ---------- */
+.act-day + .act-day { border-top: 1px solid var(--border); }
+.act-day-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 18px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.act-day-label {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.act-day-sub {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+.act-day-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Entry ---------- */
+.act-row {
+  display: grid;
+  grid-template-columns: 72px 22px minmax(0, 1fr) auto auto 22px;
+  align-items: center;
+  gap: 0 4px;
+  padding: 12px 18px 12px 14px;
+  cursor: pointer;
+}
+.act-row:hover { background: var(--surface-2); }
+.act-row:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.act-item + .act-item .act-row { border-top: 1px solid var(--border); }
+.act-item.open .act-row { background: var(--brand-green-tint); }
+
+.act-time {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.act-item.is-new .act-time { color: var(--ink); font-weight: 500; }
+
+/* The rail is one continuous line down the column, with the dot
+   punched over it, so a day reads as a single thread. */
+.act-rail {
+  position: relative;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.act-rail::before {
+  content: '';
+  position: absolute;
+  top: -12px; bottom: -12px;
+  width: 1px;
+  background: var(--border);
+}
+.act-dot {
+  position: relative;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+  border: 2px solid var(--surface);
+  box-sizing: content-box;
+}
+.act-item.is-new .act-dot { background: var(--brand-green); }
+
+.act-main { min-width: 0; padding-left: 8px; }
+.act-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.act-company {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink);
+}
+.act-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.act-meta a { color: var(--muted); text-decoration: none; }
+.act-meta a:hover { color: var(--brand-green-dark); text-decoration: underline; }
+.act-sep { margin: 0 7px; opacity: .55; }
+.act-none { font-style: italic; opacity: .8; }
+
+.act-flag {
+  flex: none;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--brand-green);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.act-tag {
+  flex: none;
+  font-size: 10.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.act-count {
+  text-align: right;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+.act-count b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.act-count small {
+  font-size: 10.5px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.act-status { padding-right: 6px; }
+
+.act-chev {
+  color: var(--muted);
+  font-size: 11px;
+  transition: transform .12s ease;
+  text-align: center;
+}
+.act-item.open .act-chev { transform: rotate(90deg); color: var(--brand-green-dark); }
+
+/* ---------- Expanded detail ---------- */
+.act-detail {
+  padding: 16px 18px 20px 108px;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  cursor: default;
+}
+.act-detail-sub {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 860px) {
+  .act-row {
+    grid-template-columns: 58px 20px minmax(0, 1fr) auto;
+    row-gap: 6px;
+    padding: 12px 14px;
+  }
+  /* Status and chevron drop away first: on a phone the company, the time
+     and the machine count are what the view is for. */
+  .act-status, .act-chev { display: none; }
+  .act-count { padding: 0 0 0 10px; }
+  .act-count b { font-size: 16px; }
+  .act-detail { padding: 14px 14px 18px; }
+
+  /* Text before the button it explains. */
+  .act-banner { flex-wrap: wrap; }
+  .act-banner-dot { order: 1; }
+  .act-banner-text { order: 2; flex: 1 1 0; }
+  #actMarkSeen { order: 3; flex: 1 1 100%; }
+}
+
+@media (max-width: 640px) {
+  /* The contact column is down to roughly 200px here. Three fields wrap
+     into a block that breaks names across lines, so keep the name and
+     leave the address and number to the expanded detail one tap away. */
+  .act-meta .act-mail,
+  .act-meta .act-tel,
+  .act-meta .act-sep { display: none; }
+  .act-who { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+  .act-company { font-size: 13.5px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .act-chev { transition: none; }
+}

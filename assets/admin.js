@@ -235,8 +235,14 @@
     return q;
   }
 
+  // Bumped on every request. A response whose number is no longer the
+  // current one has been superseded and is thrown away, so changing two
+  // filters quickly can neither lose the second change nor let a slow
+  // earlier answer overwrite a newer one.
+  var pageSeq = 0;
+
   function fetchPage(append) {
-    if (state.loading) return;
+    var seq = ++pageSeq;
     state.loading = true;
 
     if (!append) {
@@ -254,6 +260,7 @@
       .range(state.offset, state.offset + PAGE_SIZE - 1);
 
     q.then(function (res) {
+      if (seq !== pageSeq) return;     // a newer request owns the view
       state.loading = false;
       $('loadingState').classList.add('hidden');
 
@@ -416,30 +423,38 @@
       (state.expanded[r.id] ? detailHtml(r) : '');
   }
 
-  function detailHtml(r) {
-    var eq = state.equipment[r.id];
-    var body;
+  // Shared by the Registrations table and the Activity feed, so a
+  // submission's equipment always reads the same way in both.
+  function eqBodyHtml(id) {
+    var eq = state.equipment[id];
 
     if (eq === undefined) {
-      body = '<p class="detail-loading"><span class="spinner"></span>Loading equipment…</p>';
-    } else if (!eq.length) {
-      body = '<p class="detail-empty">No equipment rows were saved with this registration.</p>';
-    } else {
-      body = '<table class="eq-table"><thead><tr><th class="eq-idx">#</th>' +
-        EQ_COLS.map(function (c) { return '<th>' + c.label + '</th>'; }).join('') +
-        '</tr></thead><tbody>' +
-        eq.map(function (row, i) {
-          return '<tr><td class="eq-idx">' + (i + 1) + '</td>' +
-            EQ_COLS.map(function (c) { return '<td>' + esc(row[c.key] || '') + '</td>'; }).join('') +
-            '</tr>';
-        }).join('') +
-        '</tbody></table>';
+      return '<p class="detail-loading"><span class="spinner"></span>Loading equipment…</p>';
     }
+    if (!eq.length) {
+      return '<p class="detail-empty">No equipment rows were saved with this registration.</p>';
+    }
+    return '<table class="eq-table"><thead><tr><th class="eq-idx">#</th>' +
+      EQ_COLS.map(function (c) { return '<th>' + c.label + '</th>'; }).join('') +
+      '</tr></thead><tbody>' +
+      eq.map(function (row, i) {
+        return '<tr><td class="eq-idx">' + (i + 1) + '</td>' +
+          EQ_COLS.map(function (c) { return '<td>' + esc(row[c.key] || '') + '</td>'; }).join('') +
+          '</tr>';
+      }).join('') +
+      '</tbody></table>';
+  }
 
-    var options = STATUSES.map(function (s) {
+  function statusOptionsHtml(r) {
+    return STATUSES.map(function (s) {
       return '<option value="' + s + '"' + (r.status === s ? ' selected' : '') + '>' +
         s.charAt(0).toUpperCase() + s.slice(1) + '</option>';
     }).join('');
+  }
+
+  function detailHtml(r) {
+    var body = eqBodyHtml(r.id);
+    var options = statusOptionsHtml(r);
 
     return '' +
       '<tr class="row-detail" data-detail-for="' + esc(r.id) + '"><td colspan="8"><div class="detail-inner">' +
@@ -534,9 +549,18 @@
         for (var i = 0; i < state.rows.length; i++) {
           if (state.rows[i].id === id) { state.rows[i].status = status; break; }
         }
-        // The status filter may no longer match this row, so re-run the
-        // query rather than leaving a row on screen that the filter excludes.
-        if (state.status !== 'all' && state.status !== status) {
+        for (var j = 0; j < aState.rows.length; j++) {
+          if (aState.rows[j].id === id) { aState.rows[j].status = status; break; }
+        }
+
+        if (state.view === 'activity') {
+          // The feed is ordered by arrival and carries no status filter, so
+          // the row stays where it is and only its badge changes.
+          toast('Marked ' + status);
+          renderActivity();
+        } else if (state.status !== 'all' && state.status !== status) {
+          // The status filter may no longer match this row, so re-run the
+          // query rather than leaving a row on screen that the filter excludes.
           toast('Marked ' + status + ' — removed from this filter');
           fetchPage(false);
         } else {
@@ -1102,13 +1126,416 @@
     });
   }
 
-  var VIEW_TITLES = { companies: 'Registrations', machines: 'Machines', fleet: 'Our fleet' };
+  /* =========================================================
+     Activity — every registration in arrival order
+
+     The dashboard used to lean on an email to say "a company
+     registered". This replaces it. The feed is grouped by day,
+     carries the exact time, and marks everything that landed
+     since the last visit.
+
+     The watermark lives in localStorage rather than the
+     database on purpose: "what have I not seen yet?" is a
+     question about one person at one desk, not a shared fact
+     about the data. Two admins should not clear each other's
+     marks. It degrades to no marks at all if storage is
+     blocked, which is why every read is wrapped.
+     ========================================================= */
+
+  var SEEN_KEY = 'spirtas.fleet.activitySeenAt';
+  var ACT_PAGE = 100;
+
+  var aState = {
+    rows: [],
+    offset: 0,
+    total: 0,
+    hasMore: false,
+    search: '',
+    source: 'all',
+    range: 'all',
+    expanded: {},
+    loading: false,
+    seenMs: 0,        // watermark used for rendering; fixed for the session
+    stamped: false    // has this visit written its own watermark yet
+  };
+
+  function msOf(iso) {
+    var t = Date.parse(iso);
+    return isNaN(t) ? 0 : t;
+  }
+
+  function readSeenMs() {
+    try {
+      var v = window.localStorage.getItem(SEEN_KEY);
+      return v ? msOf(v) : 0;
+    } catch (e) {
+      return 0;     // private mode or blocked storage: no marks, still works
+    }
+  }
+
+  function writeSeenNow() {
+    try { window.localStorage.setItem(SEEN_KEY, new Date().toISOString()); } catch (e) { /* not fatal */ }
+  }
+
+  function isNewToMe(r) {
+    return aState.seenMs > 0 && msOf(r.submitted_at) > aState.seenMs;
+  }
+
+  /* ---------- Query ---------- */
+
+  function actSince() {
+    if (aState.range === 'all') return null;
+    if (aState.range === 'today') {
+      var mid = new Date();
+      mid.setHours(0, 0, 0, 0);
+      return mid.toISOString();
+    }
+    return new Date(Date.now() - Number(aState.range) * 86400000).toISOString();
+  }
+
+  var actSeq = 0;
+
+  function fetchActivity(append) {
+    var seq = ++actSeq;
+    aState.loading = true;
+
+    if (!append) {
+      aState.offset = 0;
+      $('actLoading').classList.remove('hidden');
+      $('actEmpty').classList.add('hidden');
+    }
+
+    var q = client
+      .from('submissions')
+      .select('id,ref,submitted_at,language,company_name,contact_person,email,phone,equipment_count,status,source,source_file',
+              { count: 'exact' });
+
+    if (aState.source !== 'all') q = q.eq('source', aState.source);
+
+    var since = actSince();
+    if (since) q = q.gte('submitted_at', since);
+
+    var term = safeTerm(aState.search);
+    if (term) {
+      var like = '*' + term + '*';
+      q = q.or([
+        'company_name.ilike.' + like,
+        'contact_person.ilike.' + like,
+        'email.ilike.' + like,
+        'phone.ilike.' + like,
+        'ref.ilike.' + like
+      ].join(','));
+    }
+
+    q.order('submitted_at', { ascending: false })
+     .range(aState.offset, aState.offset + ACT_PAGE - 1)
+     .then(function (res) {
+       if (seq !== actSeq) return;     // a newer request owns the view
+       aState.loading = false;
+       $('actLoading').classList.add('hidden');
+
+       if (res.error) {
+         toast('Could not load activity: ' + res.error.message, true);
+         return;
+       }
+
+       var batch = res.data || [];
+       aState.rows = append ? aState.rows.concat(batch) : batch;
+       aState.offset = aState.rows.length;
+       aState.total = res.count == null ? aState.rows.length : res.count;
+       aState.hasMore = aState.rows.length < aState.total;
+
+       renderActivity();
+     });
+  }
+
+  // Counted separately from the feed so the answer stays true whatever
+  // filters are on screen: "new since last visit" is about everything,
+  // not about the slice currently being looked at.
+  function loadNewSinceCount() {
+    if (!aState.seenMs) { renderActBanner(-1); return; }
+
+    client.from('submissions')
+      .select('id', { count: 'exact', head: true })
+      .gt('submitted_at', new Date(aState.seenMs).toISOString())
+      .then(function (res) {
+        renderActBanner(res.error ? -1 : (res.count || 0));
+      });
+  }
+
+  /* ---------- Grouping by day ---------- */
+
+  // Reads the local calendar parts, never toISOString(), for the same
+  // reason the sparkline does: converting to UTC first shifts the day
+  // boundary for anyone not on UTC and rows land under the wrong date.
+  function dayHeading(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return { key: 'unknown', label: 'Date unknown', sub: '' };
+
+    var midnight = new Date(d);
+    midnight.setHours(0, 0, 0, 0);
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var days = Math.round((today - midnight) / 86400000);
+
+    var opts = { weekday: 'short', month: 'short', day: 'numeric' };
+    if (midnight.getFullYear() !== today.getFullYear()) opts.year = 'numeric';
+    var full = midnight.toLocaleDateString('en-US', opts);
+
+    return {
+      key: dateKey(midnight),
+      label: days === 0 ? 'Today' : (days === 1 ? 'Yesterday' : full),
+      sub: days <= 1 ? full : ''
+    };
+  }
+
+  function groupByDay(rows) {
+    var groups = [];
+    var byKey = {};
+    rows.forEach(function (r) {
+      var h = dayHeading(r.submitted_at);
+      if (!byKey[h.key]) {
+        byKey[h.key] = { head: h, items: [] };
+        groups.push(byKey[h.key]);
+      }
+      byKey[h.key].items.push(r);
+    });
+    return groups;
+  }
+
+  /* ---------- Rendering ---------- */
+
+  function renderActBanner(newCount) {
+    var bar = $('actBanner');
+    var txt = $('actBannerText');
+
+    // -1 means there is no watermark yet (first visit, or storage blocked).
+    // Announcing "1,465 new" on a first look would be noise, so say nothing.
+    if (newCount < 0) { bar.classList.add('hidden'); return; }
+
+    bar.classList.remove('hidden');
+    var seenIso = new Date(aState.seenMs).toISOString();
+    var seenWhen = fmtDate(seenIso) + ' at ' + fmtTime(seenIso);
+
+    if (newCount === 0) {
+      bar.classList.add('is-quiet');
+      txt.textContent = 'Nothing new since your last visit, ' + seenWhen + '.';
+      $('actMarkSeen').classList.add('hidden');
+    } else {
+      bar.classList.remove('is-quiet');
+      txt.innerHTML = '<strong>' + fmtNum(newCount) + '</strong> new ' +
+        (newCount === 1 ? 'registration' : 'registrations') +
+        ' since your last visit, ' + esc(seenWhen) + '.';
+      $('actMarkSeen').classList.remove('hidden');
+    }
+  }
+
+  // The arrival flag deliberately says "Unseen", not "New": the status badge
+  // beside it already uses "new" to mean "not yet reviewed", and two different
+  // meanings wearing the same word on one row is unreadable.
+  function actEntryHtml(r) {
+    var open = !!aState.expanded[r.id];
+    var fresh = isNewToMe(r);
+    var imported = r.source === 'master';
+    var n = Number(r.equipment_count || 0);
+    var telHref = 'tel:' + String(r.phone || '').replace(/[^\d+]/g, '');
+
+    // Classed individually so the phone layout can drop the address and
+    // number and keep the name: on a narrow screen the contact line has
+    // about 200px, and all three wrap into an unreadable block.
+    var meta = [];
+    if (r.contact_person) meta.push('<span class="act-who">' + esc(r.contact_person) + '</span>');
+    if (r.email) meta.push('<a class="act-mail" href="mailto:' + esc(r.email) + '">' + esc(r.email) + '</a>');
+    if (r.phone) meta.push('<a class="act-tel" href="' + esc(telHref) + '">' + esc(r.phone) + '</a>');
+
+    return '' +
+      '<article class="act-item' + (open ? ' open' : '') + (fresh ? ' is-new' : '') + '" data-act-id="' + esc(r.id) + '">' +
+        '<div class="act-row" role="button" tabindex="0" aria-expanded="' + (open ? 'true' : 'false') + '">' +
+          '<time class="act-time" datetime="' + esc(r.submitted_at) + '">' + esc(fmtTime(r.submitted_at)) + '</time>' +
+          '<span class="act-rail" aria-hidden="true"><span class="act-dot"></span></span>' +
+          '<span class="act-main">' +
+            '<span class="act-title">' +
+              '<span class="act-company">' + esc(r.company_name) + '</span>' +
+              (fresh ? '<span class="act-flag">Unseen</span>' : '') +
+              (imported ? '<span class="act-tag">Imported</span>' : '') +
+            '</span>' +
+            '<span class="act-meta">' +
+              (meta.length ? meta.join('<span class="act-sep">·</span>') : '<span class="act-none">No contact given</span>') +
+            '</span>' +
+          '</span>' +
+          '<span class="act-count"><b>' + fmtNum(n) + '</b><small>' + (n === 1 ? 'machine' : 'machines') + '</small></span>' +
+          '<span class="act-status">' + statusBadge(r.status) + '</span>' +
+          '<span class="act-chev" aria-hidden="true">&#9654;</span>' +
+        '</div>' +
+        (open ? '<div class="act-detail">' + actDetailHtml(r) + '</div>' : '') +
+      '</article>';
+  }
+
+  function actDetailHtml(r) {
+    var sub = 'Ref ' + esc(r.ref || refOf(r.id)) +
+      '<span class="act-sep">·</span>' + esc(fmtDate(r.submitted_at)) + ' at ' + esc(fmtTime(r.submitted_at)) +
+      '<span class="act-sep">·</span>' + esc((r.language || 'en').toUpperCase()) +
+      '<span class="act-sep">·</span>' +
+      (r.source === 'master'
+        ? 'Imported' + (r.source_file ? ' from ' + esc(r.source_file) : '')
+        : 'Intake form');
+
+    return '' +
+      '<div class="detail-head">' +
+        '<div><h3 class="detail-title">' + esc(r.company_name) + '</h3>' +
+        '<p class="act-detail-sub">' + sub + '</p></div>' +
+        '<div class="detail-tools">' +
+          '<select class="status-select" data-id="' + esc(r.id) + '" aria-label="Change status">' + statusOptionsHtml(r) + '</select>' +
+          '<button type="button" class="btn btn-sm" data-row-csv="' + esc(r.id) + '">Download this list</button>' +
+        '</div>' +
+      '</div>' + eqBodyHtml(r.id);
+  }
+
+  function renderActivity() {
+    var wrap = $('actTimeline');
+    var groups = groupByDay(aState.rows);
+
+    wrap.innerHTML = groups.map(function (g) {
+      var n = g.items.length;
+      return '<section class="act-day">' +
+        '<header class="act-day-head">' +
+          '<h2 class="act-day-label">' + esc(g.head.label) + '</h2>' +
+          (g.head.sub ? '<span class="act-day-sub">' + esc(g.head.sub) + '</span>' : '') +
+          '<span class="act-day-count">' + fmtNum(n) + '</span>' +
+        '</header>' +
+        '<div class="act-day-items">' + g.items.map(actEntryHtml).join('') + '</div>' +
+      '</section>';
+    }).join('');
+
+    var any = aState.rows.length > 0;
+    $('actEmpty').classList.toggle('hidden', any || aState.loading);
+
+    if (any) {
+      $('actNote').textContent = aState.rows.length === aState.total
+        ? 'Showing all ' + fmtNum(aState.total) + (aState.total === 1 ? ' registration' : ' registrations') +
+          ' across ' + fmtNum(groups.length) + (groups.length === 1 ? ' day' : ' days')
+        : 'Showing the ' + fmtNum(aState.rows.length) + ' most recent of ' + fmtNum(aState.total);
+    } else {
+      $('actNote').textContent = '';
+      if (!aState.loading) {
+        var filtered = aState.search || aState.source !== 'all' || aState.range !== 'all';
+        $('actEmpty').innerHTML = filtered
+          ? '<p class="empty-title">Nothing in this window</p>' +
+            '<p class="empty-body">No registrations match these filters. Widen the date range or clear the search.</p>'
+          : '<p class="empty-title">Nothing here yet</p>' +
+            '<p class="empty-body">Registrations appear the moment a company submits the intake form.</p>';
+      }
+    }
+
+    $('actMore').classList.toggle('hidden', !aState.hasMore);
+  }
+
+  function toggleActivityRow(id) {
+    if (aState.expanded[id]) {
+      delete aState.expanded[id];
+      renderActivity();
+      return;
+    }
+    aState.expanded[id] = true;
+    renderActivity();
+
+    // Shares the cache with the Registrations table, so a list opened in one
+    // view is already loaded in the other.
+    if (state.equipment[id] !== undefined) return;
+
+    client.from('equipment')
+      .select('row_index,brand,type,model,unit_id,capacity,age,location,price,contact')
+      .eq('submission_id', id)
+      .order('row_index', { ascending: true })
+      .then(function (res) {
+        if (res.error) {
+          toast('Could not load equipment: ' + res.error.message, true);
+          delete aState.expanded[id];
+        } else {
+          state.equipment[id] = res.data || [];
+        }
+        renderActivity();
+      });
+  }
+
+  function loadActivity() {
+    // Stamp this visit once. The in-memory watermark stays where it was, so
+    // the marks survive a refresh while you are still reading the page.
+    if (!aState.stamped) {
+      aState.seenMs = readSeenMs();
+      writeSeenNow();
+      aState.stamped = true;
+    }
+    loadNewSinceCount();
+    fetchActivity(false);
+  }
+
+  function wireActivityView() {
+    var t = null;
+    $('actSearch').addEventListener('input', function (e) {
+      var v = e.target.value;
+      clearTimeout(t);
+      t = setTimeout(function () { aState.search = v; fetchActivity(false); }, SEARCH_DEBOUNCE_MS);
+    });
+
+    document.querySelectorAll('#activityView .seg-btn').forEach(function (b) {
+      b.addEventListener('click', function () {
+        aState.source = b.getAttribute('data-asource');
+        document.querySelectorAll('#activityView .seg-btn').forEach(function (x) {
+          x.setAttribute('aria-pressed', String(x === b));
+        });
+        fetchActivity(false);
+      });
+    });
+
+    $('actRange').addEventListener('change', function (e) {
+      aState.range = e.target.value;
+      fetchActivity(false);
+    });
+
+    $('actMore').addEventListener('click', function () { fetchActivity(true); });
+
+    $('actMarkSeen').addEventListener('click', function () {
+      aState.seenMs = Date.now();
+      writeSeenNow();
+      renderActBanner(0);
+      renderActivity();
+      toast('Marked everything as seen');
+    });
+
+    // One delegated listener: entries are re-rendered on every change.
+    $('actTimeline').addEventListener('click', function (e) {
+      var csvBtn = e.target.closest('[data-row-csv]');
+      if (csvBtn) { exportSingle(csvBtn.getAttribute('data-row-csv')); return; }
+
+      if (e.target.closest('a') || e.target.closest('select') || e.target.closest('.act-detail')) return;
+
+      var row = e.target.closest('.act-row');
+      if (row) toggleActivityRow(row.parentNode.getAttribute('data-act-id'));
+    });
+
+    $('actTimeline').addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var row = e.target.closest('.act-row');
+      if (!row) return;
+      e.preventDefault();
+      toggleActivityRow(row.parentNode.getAttribute('data-act-id'));
+    });
+
+    $('actTimeline').addEventListener('change', function (e) {
+      var sel = e.target.closest('.status-select');
+      if (sel) changeStatus(sel.getAttribute('data-id'), sel.value);
+    });
+  }
+
+  var VIEW_TITLES = { companies: 'Registrations', machines: 'Machines', fleet: 'Our fleet', activity: 'Activity' };
 
   function setView(view) {
     state.view = view;
     $('companiesView').classList.toggle('hidden', view !== 'companies');
     $('machinesView').classList.toggle('hidden', view !== 'machines');
     $('fleetView').classList.toggle('hidden', view !== 'fleet');
+    $('activityView').classList.toggle('hidden', view !== 'activity');
     $('viewTitle').textContent = VIEW_TITLES[view] || 'Registrations';
 
     // The KPI tiles describe the subcontractor data, so they belong with
@@ -1121,6 +1548,7 @@
 
     if (view === 'machines') loadAllEquipment();
     if (view === 'fleet') loadFleet();
+    if (view === 'activity') loadActivity();
   }
 
   function wireMachinesView() {
@@ -1801,12 +2229,14 @@
   function wireDashboard() {
     wireMachinesView();
     wireFleetView();
+    wireActivityView();
     wireImport();
     $('refreshBtn').addEventListener('click', function () {
       state.equipment = {};
       mState.all = null;              // force the machine set to reload too
       reload();
       if (state.view === 'machines') loadAllEquipment();
+      if (state.view === 'activity') loadActivity();
     });
 
     var searchTimer = null;
@@ -1819,10 +2249,13 @@
       }, SEARCH_DEBOUNCE_MS);
     });
 
-    document.querySelectorAll('.seg-btn').forEach(function (btn) {
+    // Scoped to #companiesView: the Machines and Activity views have their
+    // own .seg-btn groups, and an unscoped selector here made clicking one
+    // of those set state.status to null and blank this table.
+    document.querySelectorAll('#companiesView .seg-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
         state.status = btn.getAttribute('data-status');
-        document.querySelectorAll('.seg-btn').forEach(function (b) {
+        document.querySelectorAll('#companiesView .seg-btn').forEach(function (b) {
           b.setAttribute('aria-pressed', String(b === btn));
         });
         fetchPage(false);
