@@ -165,6 +165,46 @@ Deletion is allowed by the `admins delete submissions` policy in
 dashboard. If your account is not on the admin list the delete removes
 nothing and the dashboard says so rather than pretending it worked.
 
+---
+
+## Machines: Fleet, Review and Set aside
+
+Every machine carries a **scope**, because a company list often includes
+everything they own. `assets/scope.js` reads what each row says it is and
+sorts it into one of three:
+
+| Scope | Button | Meaning |
+|---|---|---|
+| `in` | **Fleet** | Demolition or construction plant. The real answer to "how many excavators do we have". |
+| `out` | **Set aside** | Pickups, laboratory kit, office furniture. Kept, visible, never counted. |
+| `review` | **Review** | Not clear either way. Waits for a person, because quietly dropping a real excavator is worse than a short list to check. |
+
+Nothing is ever discarded. The Machines view opens on **Fleet**.
+
+### If the Machines view looks empty
+
+That is the expected symptom of unclassified data, not a broken page. A
+machine only gets a scope when it is imported through a version of the
+app that has the classifier. The consolidated master was loaded before
+`006-scope-filter.sql` added the column, so those rows all took its
+`review` default, and opening on **Fleet** showed nothing.
+
+The view now says so, with the counts, and offers the button that has the
+rows. To sort them properly:
+
+1. Run `supabase/012-classify-existing-machines.sql`. It adds the
+   `admins update equipment` policy, without which nothing can change a
+   scope. The query at the top also shows how the rows are currently split.
+2. In the Machines view, press **Classify unreviewed**.
+
+That runs the same `assets/scope.js` the intake form and the importer use,
+so a machine is judged identically however it arrived. The keyword lists
+are deliberately not mirrored in SQL: one vocabulary means one place to
+edit when a new spelling turns up, and no chance of the two drifting.
+
+Re-running it is safe. Anything still unclear stays in **Review**, and you
+can reset everything with the statement at the bottom of migration 012.
+
 **Download CSV** exports whatever the current filters are showing:
 
 | Option | What you get |

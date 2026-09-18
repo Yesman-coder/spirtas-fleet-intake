@@ -818,6 +818,133 @@
       ys.map(function (y) { return '<option value="' + y + '">' + y + ' (' + years[y] + ')</option>'; }).join('');
   }
 
+  var SCOPE_LABELS = { in: 'Fleet', review: 'Review', out: 'Set aside', all: 'All' };
+
+  /* Sorting the machines already in the table.
+
+     The consolidated master went in before the scope column existed, so
+     every one of those rows defaulted to 'review' and the Fleet button
+     showed nothing. This runs the real classifier over them.
+
+     It calls assets/scope.js rather than repeating its keyword lists,
+     because that file is also what the intake form and the importer use.
+     One vocabulary, so a machine is judged the same however it arrived;
+     a second copy would drift and nobody would notice which was stale. */
+  function classifyUnreviewed() {
+    if (!mState.all || !window.FleetScope) return;
+
+    var pending = mState.all.filter(function (r) { return (r.scope || 'review') === 'review'; });
+    if (!pending.length) { toast('Nothing is waiting to be classified.'); return; }
+
+    if (!window.confirm(
+        'Classify ' + fmtNum(pending.length) + ' machines?\n\n' +
+        'Each one is sorted into Fleet or Set aside using the same rules the ' +
+        'intake form applies. Anything unclear stays in Review.\n\n' +
+        'Nothing is deleted, and you can re-run it later.')) return;
+
+    var btn = $('mClassify');
+    btn.disabled = true;
+    btn.textContent = 'Classifying…';
+
+    // Group by the verdict so one request covers every row that got the same
+    // answer, instead of one request per machine.
+    var groups = {};
+    pending.forEach(function (r) {
+      var v = window.FleetScope.classify(r);
+      var key = v.scope + '\u0000' + v.reason;
+      (groups[key] = groups[key] || { scope: v.scope, reason: v.reason, ids: [] }).ids.push(r.id);
+    });
+
+    var keys = Object.keys(groups);
+    var tally = { 'in': 0, out: 0, review: 0 };
+    var failed = 0;
+    var done = 0;
+
+    function finish() {
+      btn.disabled = false;
+      btn.textContent = 'Classify unreviewed';
+
+      if (failed) {
+        toast('Classified ' + fmtNum(tally['in'] + tally.out) + ', but ' + fmtNum(failed) +
+              ' could not be saved. Run supabase/012-classify-existing-machines.sql first.', true);
+      } else {
+        toast(fmtNum(tally['in']) + ' to Fleet · ' + fmtNum(tally.out) + ' set aside · ' +
+              fmtNum(tally.review) + ' still to review');
+      }
+
+      mState.all = null;          // re-read so the view shows what was saved
+      loadAllEquipment();
+    }
+
+    function step(i) {
+      if (i >= keys.length) { finish(); return; }
+      var g = groups[keys[i]];
+
+      // A verdict of 'review' is already the stored value, so writing it
+      // would be a request that changes nothing.
+      if (g.scope === 'review') { tally.review += g.ids.length; step(i + 1); return; }
+
+      // Chunked: a very long id list makes a URL the server will reject.
+      var chunks = [];
+      for (var c = 0; c < g.ids.length; c += 100) chunks.push(g.ids.slice(c, c + 100));
+
+      var ci = 0;
+      (function nextChunk() {
+        if (ci >= chunks.length) { step(i + 1); return; }
+        var ids = chunks[ci++];
+        client.from('equipment')
+          .update({ scope: g.scope, scope_reason: g.reason })
+          .in('id', ids)
+          .select('id')
+          .then(function (res) {
+            if (res.error || !res.data || res.data.length === 0) failed += ids.length;
+            else tally[g.scope] += res.data.length;
+            done += ids.length;
+            btn.textContent = 'Classifying ' + Math.round((done / pending.length) * 100) + '%';
+            nextChunk();
+          });
+      })();
+    }
+
+    step(0);
+  }
+
+  // Only offered when there is something to do.
+  function renderClassifyButton() {
+    var btn = $('mClassify');
+    if (!btn) return;
+    var pending = (mState.all || []).filter(function (r) { return (r.scope || 'review') === 'review'; }).length;
+    btn.classList.toggle('hidden', pending === 0);
+    if (pending) btn.textContent = 'Classify ' + fmtNum(pending) + ' unreviewed';
+  }
+
+  function setMachineScope(scope) {
+    mState.scope = scope;
+    document.querySelectorAll('#machinesView .seg-btn').forEach(function (x) {
+      x.setAttribute('aria-pressed', String(x.getAttribute('data-scope') === scope));
+    });
+    renderMachines();
+  }
+
+  // Everything except the scope filter, tallied by scope. This is what
+  // makes an empty table explain itself: the rows have not vanished, they
+  // are sitting under one of the other three buttons.
+  function scopeTally() {
+    var term = fold(mState.search).trim();
+    var t = { in: 0, out: 0, review: 0 };
+    (mState.all || []).forEach(function (r) {
+      if (mState.company && r.company_name !== mState.company) return;
+      if (mState.family  && r.machine_family !== mState.family) return;
+      if (mState.brand   && r.brand !== mState.brand) return;
+      if (mState.year    && String(r.year) !== mState.year) return;
+      if (term && r._hay.indexOf(term) === -1) return;
+      var k = r.scope || 'review';
+      if (t[k] === undefined) t[k] = 0;
+      t[k]++;
+    });
+    return t;
+  }
+
   function applyMachineFilters() {
     var term = fold(mState.search).trim();
     mState.filtered = mState.all.filter(function (r) {
@@ -886,7 +1013,9 @@
 
     var any = mState.filtered.length > 0;
     $('mEmpty').classList.toggle('hidden', any);
+    if (!any) renderMachinesEmpty();
     $('mMore').classList.toggle('hidden', mState.shown >= mState.filtered.length);
+    renderClassifyButton();
 
     renderAnswer();
 
@@ -900,6 +1029,60 @@
       if (key === mState.sortKey) ths[i].setAttribute('aria-sort', mState.sortAsc ? 'ascending' : 'descending');
       else ths[i].removeAttribute('aria-sort');
     }
+  }
+
+  /* An empty table is the one moment the view has to work hardest.
+     "No machines match" next to four filters is indistinguishable from a
+     broken page, and the most likely cause is not a typo in the search box:
+     it is that everything is sitting under a different scope button.
+     Machines imported before the scope column existed all defaulted to
+     'review', so opening on Fleet showed nothing at all. Say that, with
+     the counts, and offer the button that has the rows. */
+  function renderMachinesEmpty() {
+    var el = $('mEmpty');
+    var t = scopeTally();
+    var here = mState.scope === 'all' ? 0 : (t[mState.scope] || 0);
+    var total = t['in'] + t.out + t.review;
+    var elsewhere = total - here;
+
+    if (!mState.all || !mState.all.length) {
+      el.innerHTML =
+        '<p class="empty-title">No machines loaded</p>' +
+        '<p class="empty-body">Nothing has been imported yet. Use <strong>Import file</strong> ' +
+        'to load a machinery list, or wait for a company to register one.</p>';
+      return;
+    }
+
+    if (elsewhere > 0) {
+      var order = ['in', 'review', 'out'].filter(function (k) {
+        return k !== mState.scope && t[k] > 0;
+      });
+      var biggest = order.slice().sort(function (a, b) { return t[b] - t[a]; })[0];
+
+      el.innerHTML =
+        '<p class="empty-title">Nothing under &ldquo;' + esc(SCOPE_LABELS[mState.scope] || mState.scope) + '&rdquo;</p>' +
+        '<p class="empty-body">' +
+          fmtNum(elsewhere) + ' ' + (elsewhere === 1 ? 'machine is' : 'machines are') +
+          ' here, under ' +
+          order.map(function (k) {
+            return '<strong>' + esc(SCOPE_LABELS[k]) + '</strong> (' + fmtNum(t[k]) + ')';
+          }).join(' and ') + '.' +
+          (t.review === total && total > 0
+            ? ' Nothing has been classified yet, so everything is waiting for review.'
+            : '') +
+        '</p>' +
+        '<p class="empty-actions">' +
+          '<button type="button" class="btn btn-sm btn-primary" data-goscope="' + esc(biggest) + '">' +
+            'Show ' + esc(SCOPE_LABELS[biggest]) + ' (' + fmtNum(t[biggest]) + ')</button>' +
+          '<button type="button" class="btn btn-sm" data-goscope="all">Show all ' + fmtNum(total) + '</button>' +
+        '</p>';
+      return;
+    }
+
+    el.innerHTML =
+      '<p class="empty-title">No machines match</p>' +
+      '<p class="empty-body">Nothing matches these filters. Try clearing the search or widening them.</p>' +
+      '<p class="empty-actions"><button type="button" class="btn btn-sm" id="mEmptyClear">Clear filters</button></p>';
   }
 
   /* The headline answer. "How many excavators do we have?" should be one
@@ -1785,14 +1968,17 @@
       });
 
     document.querySelectorAll('#machinesView .seg-btn').forEach(function (b) {
-      b.addEventListener('click', function () {
-        mState.scope = b.getAttribute('data-scope');
-        document.querySelectorAll('#machinesView .seg-btn').forEach(function (x) {
-          x.setAttribute('aria-pressed', String(x === b));
-        });
-        renderMachines();
-      });
+      b.addEventListener('click', function () { setMachineScope(b.getAttribute('data-scope')); });
     });
+
+    // The buttons the empty state offers.
+    $('mEmpty').addEventListener('click', function (e) {
+      var go = e.target.closest('[data-goscope]');
+      if (go) { setMachineScope(go.getAttribute('data-goscope')); return; }
+      if (e.target.closest('#mEmptyClear')) $('mClear').click();
+    });
+
+    $('mClassify').addEventListener('click', classifyUnreviewed);
 
     $('mClear').addEventListener('click', function () {
       mState.search = mState.company = mState.family = mState.brand = mState.year = '';

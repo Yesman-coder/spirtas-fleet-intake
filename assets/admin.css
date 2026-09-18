@@ -1031,3 +1031,12 @@ tr.row-detail > td { padding: 0; background: var(--surface-2); border-bottom: 1p
   .bulk-bar { flex-wrap: wrap; }
   .bulk-count { flex: 1 1 100%; }
 }
+
+/* An empty machines table offers the way out, so the buttons need room. */
+.empty-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 14px 0 0;
+}
